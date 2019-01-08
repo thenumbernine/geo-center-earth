@@ -10,7 +10,6 @@ local matrix = require 'matrix'
 --local boundaries = assert(json.decode(file['tectonicplates/GeoJSON/PB2002_boundaries.json']))
 --local orogens = assert(json.decode(file['tectonicplates/GeoJSON/PB2002_orogens.json']))
 --local steps = assert(json.decode(file['tectonicplates/GeoJSON/PB2002_steps.json']))
---local coastline = assert(json.decode(file['naturalearthdata/ne_10m_coastline.geojson']))
 
 local Orbit = require 'glapp.orbit'
 local View = require 'glapp.view'
@@ -31,10 +30,16 @@ local layers = {
 	--{name='orogens', data=orogens},
 	--{name='plates', data=assert(json.decode(file['tectonicplates/GeoJSON/PB2002_plates.json']))},
 	--{name='steps', data=steps},
-	--{name='coastline', data=coastline},
+	--{name='coastline', data=assert(json.decode(file['naturalearthdata/ne_10m_coastline.geojson']))},
 	{name='land', data=assert(json.decode(file['naturalearthdata/ne_10m_land.geojson']))},
 }
 
+-- |d(x,y,z)/d(h,lambda,phi)|
+local function dx_dsphere_det(r, h, e, phi) 
+	local rPlusH = r + h
+	local cosPhi = math.cos(phi)
+	return rPlusH * cosPhi * (rPlusH - r * e * e * cosPhi * cosPhi)
+end
 
 local function calcFeatureCOM(poly)
 	local com = matrix{0,0}
@@ -46,11 +51,17 @@ local function calcFeatureCOM(poly)
 		
 		local a = matrix(poly[i])
 		local b = matrix(poly[i2])
+	
+		-- [[ cartesian centroid / average in lat/lon space
 		local triarea = .5 * matrix{a,b}:det()
-		com = com + (a + b) * triarea
+		local tricom = (a + b) / 3
+		--]]
+		-- [[ spheroid centroid / average in xyz after projection to spheroid
+		--]]
+		com = com + tricom * triarea
 		area = area + triarea
 	end
-	com = com / (3 * area)
+	com = com / area
 	return com, area
 end
 
