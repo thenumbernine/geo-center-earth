@@ -44,31 +44,31 @@ local eccentricitySquared = (2 * inverseFlattening - 1) / (inverseFlattening * i
 local eccentricitySquared = 0
 --]]
 
-local function calc_N(sinPhi, equatorialRadius, eccentricitySquared)
-	local denom = math.sqrt(1 - eccentricitySquared * sinPhi * sinPhi)
+local function calc_N(sinTheta, equatorialRadius, eccentricitySquared)
+	local denom = math.sqrt(1 - eccentricitySquared * sinTheta * sinTheta)
 	return equatorialRadius / denom
 end
 
-local function calc_dN_dphi(sinPhi, cosPhi, equatorialRadius, eccentricitySquared)
-	local denom = math.sqrt(1 - eccentricitySquared * sinPhi * sinPhi)
-	return eccentricitySquared * sinPhi * cosPhi * equatorialRadius / (denom * denom * denom)
+local function calc_dN_dTheta(sinTheta, cosTheta, equatorialRadius, eccentricitySquared)
+	local denom = math.sqrt(1 - eccentricitySquared * sinTheta * sinTheta)
+	return eccentricitySquared * sinTheta * cosTheta * equatorialRadius / (denom * denom * denom)
 end
 
--- |d(x,y,z)/d(h,lambda,phi)| for h=0
+-- |d(x,y,z)/d(h,theta,phi)| for h=0
 local function dx_dsphere_det_h_eq_0(lon, lat) 
-	local phi = math.rad(lat)
-	local lambda = math.rad(lon)
-	local sinPhi = math.sin(phi)
-	local cosPhi = math.cos(phi)
+	local phi = math.rad(lon)
+	local theta = math.rad(lat)
+	local sinTheta = math.sin(theta)
+	local cosTheta = math.cos(theta)
 	
 	local h = 0
-	local N = calc_N(sinPhi, equatorialRadius, eccentricitySquared)
-	local dN_dphi = calc_dN_dphi(sinPhi, cosPhi, equatorialRadius, eccentricitySquared)
-	local cosPhi2 = cosPhi * cosPhi
+	local N = calc_N(sinTheta, equatorialRadius, eccentricitySquared)
+	local dN_dTheta = calc_dN_dTheta(sinTheta, cosTheta, equatorialRadius, eccentricitySquared)
+	local cosTheta2 = cosTheta * cosTheta
 	return N * (
-		N * cosPhi 
-		+ eccentricitySquared * cosPhi2 * N * cosPhi
-		+ eccentricitySquared * cosPhi2 * dN_dphi * sinPhi
+		N * cosTheta 
+		+ eccentricitySquared * cosTheta2 * N * cosTheta
+		+ eccentricitySquared * cosTheta2 * dN_dTheta * sinTheta
 	)
 end
 
@@ -77,57 +77,53 @@ end
 only good for eccentricity = 0
 so N = equatorialRadius
 where
-a_phi = a in latitude
-b_phi = b in latitude
-c_phi = c in latitude
+a_theta = a in latitude
+b_theta = b in latitude
+c_theta = c in latitude
 
-expr: integrate(integrate(N^2 * cos(a_phi + (b_phi-a_phi) * u + (c_phi-a_phi) * v), v, 0, 1-u), u, 0, 1)
-...where |d(xyz)/d(h,phi,lambda)| = N^2 cos(phi) = N^2 cos(a_phi + (b_phi-a_phi)*u + (c_phi-a_phi)*v)
+expr: integrate(integrate(N^2 * cos(a_theta + (b_theta-a_theta) * u + (c_theta-a_theta) * v), v, 0, 1-u), u, 0, 1)
+...where |d(xyz)/d(h,theta,theta)| = N^2 cos(theta) = N^2 cos(a_theta + (b_theta-a_theta)*u + (c_theta-a_theta)*v)
 ... gives this:
 --]]
 local function perfectSphere_triArea(a_lat, b_lat, c_lat)
-	local a_phi = math.rad(a_lat)
-	local b_phi = math.rad(b_lat)
-	local c_phi = math.rad(c_lat)
-	local ca_phi = c_phi - a_phi
-	local ba_phi = b_phi - a_phi 
-	local cb_phi = c_phi - b_phi
+	local a_theta = math.rad(a_lat)
+	local b_theta = math.rad(b_lat)
+	local c_theta = math.rad(c_lat)
+	local ca_theta = c_theta - a_theta
+	local ba_theta = b_theta - a_theta 
+	local cb_theta = c_theta - b_theta
 	return equatorialRadius * equatorialRadius * (
-		  math.cos(b_phi) * ca_phi
-		- math.cos(a_phi) * cb_phi
-		- math.cos(c_phi) * ba_phi
-	) / (ba_phi * ca_phi * cb_phi)
+		  math.cos(b_theta) * ca_theta
+		- math.cos(a_theta) * cb_theta
+		- math.cos(c_theta) * ba_theta
+	) / (ba_theta * ca_theta * cb_theta)
 end
 
 --[[
 triCOM = same integral as above but times (x,y,z)
 ...where...
-x = R * cos(phi) * cos(lambda)
-y = R * cos(phi) * sin(lambda)
-z = R * sin(phi)
+x = R * cos(theta) * cos(phi)
+y = R * cos(theta) * sin(phi)
+z = R * sin(theta)
+theta = a_theta + (b_theta - a_theta)*u + (c_theta - a_theta)*v
 phi = a_phi + (b_phi - a_phi)*u + (c_phi - a_phi)*v
-lambda = a_lambda + (b_lambda - a_lambda)*u + (c_lambda - a_lambda)*v
-...so the integral looks like:
-integrate(integrate(R^3 * cos(a + (b-a) * u + (c-a) * v)^2 * cos(d + (e-d) * u + (f-d) * v), v, 0, 1-u), u, 0, 1)
 ... and this is stalling out every CAS I put it through.
 To do this by hand: do a change-of-basis, but that means exchanging the boundaries for a linear function of u's and v's, and chopping the integral up into 2 based on the triangle's alignment with lat & lon
 --]]
-
 local function convertLatLonToSpheroid3D(lon, lat)
-	local phi = math.rad(lat)
-	local lambda = math.rad(lon)
-	local cosPhi = math.cos(phi)
-	local sinPhi = math.sin(phi)
-	local sinPhiSquared = sinPhi * sinPhi
+	local phi = math.rad(lon)
+	local theta = math.rad(lat)
+	local cosTheta = math.cos(theta)
+	local sinTheta = math.sin(theta)
 	
-	local N = equatorialRadius / math.sqrt(1 - eccentricitySquared * sinPhiSquared)
+	local N = calc_N(sinTheta, equatorialRadius, eccentricitySquared)
 	
 	local height = 0
 	local NPlusH = N + height
 	return 
-		NPlusH * cosPhi * math.cos(lambda),
-		NPlusH * cosPhi * math.sin(lambda),
-		(N * (1 - eccentricitySquared) + height) * sinPhi
+		NPlusH * cosTheta * math.cos(phi),
+		NPlusH * cosTheta * math.sin(phi),
+		(N * (1 - eccentricitySquared) + height) * sinTheta
 end
 
 local function convertSpheroid3DToLatLon(x,y,z)
@@ -144,10 +140,10 @@ phi[0] = atan2(z, (x^2 + y^2)^.5)
 	-- spherical:
 	local r2 = math.sqrt(x*x + y*y);
 	local r = math.sqrt(r2*r2 + z*z);
-	local lambda = math.atan2(z, r2);
+	local theta = math.atan2(z, r2);
 
 	-- lon, lat:
-	return math.deg(lambda), math.deg(phi)
+	return math.deg(theta), math.deg(phi)
 end
 
 
@@ -180,12 +176,12 @@ local function calcFeatureCOM(poly)
 		local triarea = .5 * cross(carta, cartb):norm()
 		local tricom = (carta + cartb) / 3
 		--]]
-		--[[ perfect sphere triangle surface integral xform:
+		--[[ analytical expression for sphere triangle surface integral xform:
 		local dsphere_dlatlon = .5 * matrix{a,b}:det()
 		local triarea = perfectSphere_triArea(0, a[2], b[2]) * dsphere_dlatlon
 		local tricom = perfectSphere_triCOM(0, a[2], b[2]) * dsphere_dlatlon
 		--]]
-		--[[ spheroid centroid triangle surface integral / average in xyz after projection to spheroid
+		--[[ analytical expression for spheroid centroid triangle surface integral / average in xyz after projection to spheroid
 		local dsphere_dlatlon = .5 * matrix{a,b}:det()
 		local triarea = dsphere_dlatlon * dx_dsphere_det_h_eq_0(table.unpack(coord))
 		--]]
@@ -246,6 +242,7 @@ end
 
 _G.drawOnSphere = false
 _G.drawCOMs = false
+_G.drawSolid = false
 
 local function vertex(coord)
 	if drawOnSphere then
@@ -269,23 +266,60 @@ local function drawPoly(poly)
 
 	if drawSolid then
 		-- glu tess stuff here
-		if not tess then
-			local xyz = ffi.new('GLdouble[3]')
+		if not tessID then	
+			tessID = gl.glGenLists(1)
+			assert(tessID ~= 0)
+			
 			tess = glu.gluNewTess()
+			assert(tess ~= nil)
+
+
+			glu.gluTessCallback(tess, glu.GLU_TESS_BEGIN, ffi.cast('GLvoid(*)()', gl.glBegin))
+			glu.gluTessCallback(tess, glu.GLU_TESS_END, gl.glEnd)
+			glu.gluTessCallback(tess, glu.GLU_TESS_ERROR, ffi.cast('GLvoid(*)()', function(code) error(ffi.string(glu.gluErrorString(code))) end))
+			glu.gluTessCallback(tess, glu.GLU_TESS_VERTEX, ffi.cast('GLvoid(*)()', gl.glVertex3dv))
+	
+			-- [[ crashes ... but won't draw without this ...
+			-- why does tesselation/src/main.cpp write out data when it never uses it?
+			local vertices = table()
+    		glu.gluTessCallback(tess, glu.GLU_TESS_COMBINE, function(newVertex, neighborVertex, neighborWeight, outData)
+				local vertex = ffi.new('double[3]')
+				--ffi.copy(vertex, newVertex, ffi.sizeof'double[3]')
+				vertex[0] = newVertex[0]
+				vertex[1] = newVertex[1]
+				vertex[2] = newVertex[2]
+				outData[0] = vertex
+				vertices:insert(vertex)
+			end)
+			--]]
+
+			gl.glNewList(tessID, gl.GL_COMPILE)
+			gl.glColor3f(1,1,1)
+			glu.gluTessBeginPolygon(tess, nil)
+			glu.gluTessBeginContour(tess)
 			
-			glu.gluTessBeginPolygon(tess, userdata)
-			glu.gluTessBeginContour(tess)	-- or gluTessBeginPolygon() ?
-			if drawOnSphere then
-			else
-				xyz[0] = coord[1]
-				xyz[1] = coord[2]
-				xyz[2] = 0
+			for _,coord in ipairs(poly) do
+				local xyz = ffi.new('GLdouble[3]')
+				if drawOnSphere then
+					local x,y,z = convertLatLonToSpheroid3D(table.unpack(coord))
+					xyz[0] = x
+					xyz[1] = y
+					xyz[2] = z
+				else
+					xyz[0] = coord[1]
+					xyz[1] = coord[2]
+					xyz[2] = 0
+				end
+				glu.gluTessVertex(tess, xyz, xyz)
 			end
-			
-			glu.gluTessVertex(tess, xyz, vertexData)	-- what's the diff between xyz and vertexData?
+
 			glu.gluTessEndContour(tess)
-			glu.gluTessEndPolygon(tess, userdata)
+			glu.gluTessEndPolygon(tess)
+			gl.glEndList()
+
+    		glu.gluDeleteTess(tess)
 		else
+			gl.glCallList(tessID)
 		end
 	else
 		gl.glBegin(gl.GL_LINE_LOOP)
@@ -362,6 +396,7 @@ end
 function App:updateGUI(...)
 	checkbox(_G, 'drawOnSphere')
 	checkbox(_G, 'drawCOMs')
+	checkbox(_G, 'drawSolid')
 	
 	self.view.ortho = not drawOnSphere
 	
