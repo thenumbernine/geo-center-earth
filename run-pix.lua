@@ -56,27 +56,24 @@ local function convertLatLonToSpheroid3D(lon, lat)
 		(N * (1 - eccentricitySquared) + height) * sinTheta
 end
 
+-- https://gis.stackexchange.com/questions/28446/computational-most-efficient-way-to-convert-cartesian-to-geodetic-coordinates
 local function convertSpheroid3DToLatLon(x,y,z)
 	-- this much is always true
 	local phi = math.atan2(y, x);
-
---[[ radial distance for spheroid:
-calculating r,theta based on r2, z
-
-r2(r,theta) = sqrt(x^2 + y^2) = (N+h) cosTheta
-z(r,theta) = (N * (1 - eccentricitySquared) + height) * sinTheta
-
-r(r2,z) = (N+h)^2 + ( N eps^2 - 2 (N+h) ) N eps^2 sin(theta)^2
-theta(r2,z) = atan2(...) 
-r[0] = (x^2 + y^2 + z^2)^.5
-theta[0] = atan2(z, (x^2 + y^2)^.5)
---]]
-
-	-- spherical:
-	local r2 = math.sqrt(x*x + y*y);
-	local r = math.sqrt(r2*r2 + z*z);
-	local theta = math.atan2(z, r2);
-
+	local theta
+	for i=1,10000 do
+		-- spherical:
+		local r2 = math.sqrt(x*x + y*y);
+		local newtheta = math.atan2(z, r2);
+		if theta then
+			local dtheta = math.abs(newtheta - theta)
+			print(dtheta, z)
+			if dtheta < 1e-15 then break end
+		end
+		theta = newtheta
+		x,y,z = convertLatLonToSpheroid3D( math.deg(phi), math.deg(theta) )
+	end
+	
 	-- lon, lat:
 	return (math.deg(phi) + 180) % 360 - 180, 
 			(math.deg(theta) + 90) % 180 - 90
@@ -85,20 +82,28 @@ end
 
 --- END CUT FROM run.lua
 
---[[
+-- [[
 local Image = require 'image'
 local img = Image'visibleearth/gebco_08_rev_bath_21600x10800.png'
 assert(img)
 local w, h, ch = img:size()
 assert(ch == 1)
 --]]
--- [[
-local w, h = 2000, 1000
+--[[
+local w, h = 200, 100
 --]]
 
 local matrix = require 'matrix'
 local com = matrix{0,0,0}
 local mass = 0
+
+-- [[
+local com = matrix{0.6047097872861, 0.35902954396197, 0.7109316842868}
+print('com',com)
+print('lon lat of com',convertSpheroid3DToLatLon(com:unpack()))
+os.exit()
+--]]
+
 
 local lastTime = os.time()
 local imgsize = w * h
@@ -120,7 +125,7 @@ for j=0,h-1 do
 			-- consider this coordinate for land sum
 			
 			local pt = matrix{convertLatLonToSpheroid3D(lon, lat)}
-			-- [[ verify accuracy
+			--[[ verify accuracy
 			local lon2, lat2 = convertSpheroid3DToLatLon(pt:unpack())
 			err_lon = err_lon + math.abs(lon-lon2) 
 			err_lat = err_lat + math.abs(lat-lat2)

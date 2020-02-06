@@ -1,6 +1,5 @@
 #!/usr/bin/env luajit
 require 'ext'
-local ImGuiApp = require 'imguiapp'
 local json = require 'dkjson'
 local gl = require 'gl'
 local glu = require 'ffi.glu'
@@ -12,9 +11,7 @@ local matrix = require 'matrix'
 --local orogens = assert(json.decode(file['tectonicplates/GeoJSON/PB2002_orogens.json']))
 --local steps = assert(json.decode(file['tectonicplates/GeoJSON/PB2002_steps.json']))
 
-local Orbit = require 'glapp.orbit'
-local View = require 'glapp.view'
-local App = class(Orbit(View.apply(ImGuiApp)))
+local App = class(require 'glapp.orbit'(require 'imguiapp'))
 App.title = 'Geo Center'
 
 function App:initGL(...)

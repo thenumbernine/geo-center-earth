@@ -14,6 +14,7 @@ printbr(epsilon,'= eccentricity')
 local R = var'R'
 printbr(R,'= equatorial radius')
 
+-- https://codereview.stackexchange.com/questions/195933/convert-geodetic-coordinates-to-geocentric-cartesian
 local N = var('N', {R, epsilon, theta})
 local Ndef = N:eq(R / sqrt(1 - (epsilon * sin(theta))^2))
 printbr(Ndef)
