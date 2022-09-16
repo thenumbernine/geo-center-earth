@@ -7,9 +7,9 @@ local ffi = require 'ffi'
 local ig = require 'ffi.imgui'
 local matrix = require 'matrix'
 
---local boundaries = assert(json.decode(file['tectonicplates/GeoJSON/PB2002_boundaries.json']))
---local orogens = assert(json.decode(file['tectonicplates/GeoJSON/PB2002_orogens.json']))
---local steps = assert(json.decode(file['tectonicplates/GeoJSON/PB2002_steps.json']))
+--local boundaries = assert(json.decode(file'tectonicplates/GeoJSON/PB2002_boundaries.json':read()))
+--local orogens = assert(json.decode(file'tectonicplates/GeoJSON/PB2002_orogens.json':read()))
+--local steps = assert(json.decode(file'tectonicplates/GeoJSON/PB2002_steps.json':read()))
 
 local App = class(require 'glapp.orbit'(require 'imguiapp'))
 App.title = 'Geo Center'
@@ -26,10 +26,10 @@ end
 local layers = {
 	--{name='boundaries', data=boundaries},
 	--{name='orogens', data=orogens},
-	--{name='plates', data=assert(json.decode(file['tectonicplates/GeoJSON/PB2002_plates.json']))},
+	--{name='plates', data=assert(json.decode(file'tectonicplates/GeoJSON/PB2002_plates.json':read()))},
 	--{name='steps', data=steps},
-	--{name='coastline', data=assert(json.decode(file['naturalearthdata/ne_10m_coastline.geojson']))},
-	{name='land', data=assert(json.decode(file['naturalearthdata/ne_10m_land.geojson']))},
+	--{name='coastline', data=assert(json.decode(file'naturalearthdata/ne_10m_coastline.geojson':read()))},
+	{name='land', data=assert(json.decode(file'naturalearthdata/ne_10m_land.geojson':read()))},
 }
 
 local equatorialRadius = 1
