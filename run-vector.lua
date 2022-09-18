@@ -4,14 +4,14 @@ local json = require 'dkjson'
 local gl = require 'gl'
 local glu = require 'ffi.glu'
 local ffi = require 'ffi'
-local ig = require 'ffi.imgui'
+local ig = require 'imgui'
 local matrix = require 'matrix'
 
 --local boundaries = assert(json.decode(file'tectonicplates/GeoJSON/PB2002_boundaries.json':read()))
 --local orogens = assert(json.decode(file'tectonicplates/GeoJSON/PB2002_orogens.json':read()))
 --local steps = assert(json.decode(file'tectonicplates/GeoJSON/PB2002_steps.json':read()))
 
-local App = class(require 'glapp.orbit'(require 'imguiapp'))
+local App = require 'imguiapp.withorbit'()
 App.title = 'Geo Center'
 
 function App:initGL(...)
@@ -382,30 +382,22 @@ function App:update(...)
 	App.super.update(self, ...)
 end
 
-local bool = ffi.new('bool[1]')
-local function checkbox(t, k)
-	bool[0] = not not t[k]
-	if ig.igCheckbox(k, bool) then
-		t[k] = not not bool[0]
-	end
-end
-
 function App:updateGUI(...)
-	checkbox(_G, 'drawOnSphere')
-	checkbox(_G, 'drawCOMs')
-	checkbox(_G, 'drawSolid')
+	ig.luatableCheckbox('drawOnSphere', _G, 'drawOnSphere')
+	ig.luatableCheckbox('drawCOMs', _G, 'drawCOMs')
+	ig.luatableCheckbox('drawSolid', _G, 'drawSolid')
 	
 	self.view.ortho = not drawOnSphere
 	
 	for _,layer in ipairs(layers) do
 		local com = layer.com
 		local mass = layer.mass
-		ig.igPushIDStr(layer.name)
+		ig.igPushID_Str(layer.name)
 		ig.igText(layer.name..' area '..mass)
 		ig.igSameLine()
 		if ig.igCollapsingHeader'' then
 			for _,k in ipairs{'disabled'} do
-				checkbox(layer, k)
+				ig.luatableCheckbox(k, layer, k)
 			end
 		end
 		ig.igPopID()
