@@ -2,6 +2,7 @@
 require 'ext'
 local json = require 'dkjson'
 local gl = require 'gl'
+local glcall = require 'gl.call'
 local glu = require 'ffi.glu'
 local ffi = require 'ffi'
 local ig = require 'imgui'
@@ -270,7 +271,6 @@ local function drawPoly(poly)
 			tess = glu.gluNewTess()
 			assert(tess ~= nil)
 
-
 			glu.gluTessCallback(tess, glu.GLU_TESS_BEGIN, ffi.cast('GLvoid(*)()', gl.glBegin))
 			glu.gluTessCallback(tess, glu.GLU_TESS_END, gl.glEnd)
 			glu.gluTessCallback(tess, glu.GLU_TESS_ERROR, ffi.cast('GLvoid(*)()', function(code) error(ffi.string(glu.gluErrorString(code))) end))
@@ -329,7 +329,7 @@ local function drawPoly(poly)
 
 			vertex(coord)
 		end
-		gl.glEnd()	
+		gl.glEnd()
 	end
 
 	if drawCOMs then
@@ -356,34 +356,40 @@ end
 function App:update(...)
 	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
 	
-	for _,layer in ipairs(layers) do
-		if not layer.disabled then		
-			for _,feature in ipairs(layer.data.features) do
-				if feature.geometry.type == 'LineString' then
-					drawPoly(feature.geometry.coordinates)
-				elseif feature.geometry.type == 'Polygon' then
-					assert(#feature.geometry.coordinates == 1)
-					for _,poly in ipairs(feature.geometry.coordinates) do
-						drawPoly(poly)
-					end
-				elseif feature.geometry.type == 'MultiPolygon' then
-					for _,group in ipairs(feature.geometry.coordinates) do
-						for _,poly in ipairs(group) do
+	-- todo invalidate this if anything changes
+	self.drawList = self.drawList or {}
+	glcall(self.drawList, function()
+		for _,layer in ipairs(layers) do
+			if not layer.disabled then		
+				for _,feature in ipairs(layer.data.features) do
+					if feature.geometry.type == 'LineString' then
+						drawPoly(feature.geometry.coordinates)
+					elseif feature.geometry.type == 'Polygon' then
+						assert(#feature.geometry.coordinates == 1)
+						for _,poly in ipairs(feature.geometry.coordinates) do
 							drawPoly(poly)
+						end
+					elseif feature.geometry.type == 'MultiPolygon' then
+						for _,group in ipairs(feature.geometry.coordinates) do
+							for _,poly in ipairs(group) do
+								drawPoly(poly)
+							end		
 						end		
-					end		
-				else
-					error("unknown geometry.type "..feature.geometry.type)
+					else
+						error("unknown geometry.type "..feature.geometry.type)
+					end
 				end
 			end
 		end
-	end
+	end)
 	
 	App.super.update(self, ...)
 end
 
 function App:updateGUI(...)
-	ig.luatableCheckbox('drawOnSphere', _G, 'drawOnSphere')
+	if ig.luatableCheckbox('drawOnSphere', _G, 'drawOnSphere') then
+		self.drawList = {}
+	end
 	ig.luatableCheckbox('drawCOMs', _G, 'drawCOMs')
 	ig.luatableCheckbox('drawSolid', _G, 'drawSolid')
 	
@@ -392,6 +398,7 @@ function App:updateGUI(...)
 	for _,layer in ipairs(layers) do
 		local com = layer.com
 		local mass = layer.mass
+		layer.disabled = not not layer.disabled
 		ig.igPushID_Str(layer.name)
 		ig.igText(layer.name..' area '..mass)
 		ig.igSameLine()
