@@ -191,6 +191,7 @@ com lon lat =	[30.698539186783, 45.310770365875]
 local gl = require 'gl'
 local ig = require 'imgui'
 local GLTex2D = require 'gl.tex2d'
+local GLProgram = require 'gl.program'
 local App = require 'imguiapp.withorbit'()
 App.title = 'Geo Center'
 
@@ -215,6 +216,45 @@ function App:initGL(...)
 		minFilter = gl.GL_LINEAR,
 		magFilter = gl.GL_LINEAR,
 		generateMipmap = true,
+	}
+
+	local img = Image'continent-mask.png':resize(2048,1024):rgb():setChannels(4)
+	for i=3,img.width*img.height*4,4 do
+		img.buffer[i] = 127
+	end
+	self.continentTex = GLTex2D{
+		image = img,
+		minFilter = gl.GL_LINEAR,
+		magFilter = gl.GL_LINEAR,
+		generateMipmap = true,
+	}
+
+	self.shader = GLProgram{
+		vertexCode = [[
+varying vec3 color;
+varying vec2 tc;
+void main() {
+	gl_Position = ftransform();
+	color = gl_Color.rgb;
+	tc = gl_MultiTexCoord0.st;
+}
+]],
+		fragmentCode = [[
+uniform sampler2D tex;
+uniform sampler2D continents;
+varying vec3 color;
+varying vec2 tc;
+void main() {
+	gl_FragColor = mix(
+		texture2D(tex, tc),
+		texture2D(continents, tc),
+		.5);
+}
+]],
+		uniforms = {
+			tex = 0,
+			continents = 1,
+		},
 	}
 end
 
@@ -256,8 +296,10 @@ end
 function App:update()
 	gl.glClearColor(0, 0, 0, 1)
 	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
-	self.tex:enable()
-	self.tex:bind()
+	self.shader:use()
+	--self.tex:enable()
+	self.tex:bind(0)
+	self.continentTex:bind(1)
 	gl.glColor3f(1,1,1)
 	for i=0,idivs-1 do
 		gl.glColor3f(1,1,1)
@@ -268,8 +310,10 @@ function App:update()
 		end
 		gl.glEnd()
 	end
-	self.tex:unbind()
-	self.tex:disable()
+	self.continentTex:unbind(1)
+	self.tex:unbind(0)
+	--self.tex:disable()
+	self.shader:useNone()
 	
 	gl.glColor3f(1,0,0)
 	gl.glPointSize(3)
