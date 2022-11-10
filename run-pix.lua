@@ -94,10 +94,20 @@ local img = Image'visibleearth/gebco_08_rev_bath_21600x10800.png'
 assert(img)
 local w, h, ch = img:size()
 assert(ch == 1)
+print('width', w, 'height', h)
 --]]
 --[[
 local w, h = 200, 100
 --]]
+	
+local continentImg = Image'continent-mask.png'
+print('continent width', continentImg.width, 'height', continentImg.height, 'channels', continentImg.channels)
+assert(continentImg.channels >= 3)
+assert(continentImg.width == img.width)
+assert(continentImg.height == img.height)
+
+local comForMask = {}
+local areaForMask = {}
 
 local matrix = require 'matrix'
 local com = matrix{0,0,0}
@@ -122,15 +132,20 @@ local landArea = 0
 local totalArea = 0
 local e = 0
 local hist = range(0,255):map(function(i) return 0, i end)
-local step = 5
+local step = 100
 for j=0,h-1,step do
 	local lat = (.5 - (j+.5)/h) * 180
-	local dA = math.abs(dx_dsphere_det_h_eq_0(lat)) * (2 * math.pi) / w * math.pi / h
+	--local dA = math.abs(dx_dsphere_det_h_eq_0(lat)) * (2 * math.pi) / w * math.pi / h
+	local dtheta = (math.pi * step) / h
+	local dphi = (2 * math.pi * step) / w
+	local sintheta = math.sin((j+.5) / h * math.pi)
+	local dA = sintheta * dphi * dtheta 
 	--assert(math.isfinite(dA))
 	for i=0,w-1,step do
+		e = i + w * j
 		local lon = ((i+.5)/w - .5) * 360
-		local v = img and img.buffer[e] e=e+1
-		if img == nil or v == 255 then
+		local v = img and img.buffer[e] 
+		if img == nil or v >= 255 then
 			-- consider this coordinate for land sum
 			
 			local pt = matrix{convertLatLonToSpheroid3D(lon, lat)}
@@ -144,6 +159,18 @@ for j=0,h-1,step do
 			--]]
 			com = com + pt * dA
 			landArea = landArea + dA
+			
+			if continentImg then
+				local cch = continentImg.channels
+				-- or how about %02x ?
+				local mask = tonumber(bit.bor(
+					continentImg.buffer[0+cch*e],
+					bit.lshift(continentImg.buffer[1+cch*e], 8),
+					bit.lshift(continentImg.buffer[2+cch*e], 16)))
+				
+				comForMask[mask] = (comForMask[mask] or matrix{0,0,0}) + pt * dA
+				areaForMask[mask] = (areaForMask[mask] or 0) + dA
+			end
 		end
 		totalArea = totalArea + dA
 	end
@@ -160,7 +187,8 @@ print('reconstruction lon err', err_lon)
 print('landArea', landArea)
 print('totalArea', totalArea)
 print('totalArea / 4pi', totalArea / (4 * math.pi))
-print('% of earth covered by water =', landArea / totalArea)
+print('% of earth covered by land =', (landArea / totalArea) * 100)
+print('% of earth covered by water =', (1 - landArea / totalArea) * 100)
 local comNorm = com:norm()
 print('com norm', comNorm)
 local com2 = com / comNorm 
@@ -169,6 +197,11 @@ print('com2 = ', com2)
 local latLon = matrix{convertSpheroid3DToLatLon(com2:unpack())}
 print('com lon lat =', latLon) 
 --]=]
+
+for _,mask in ipairs(table.keys(comForMask)) do
+	comForMask[mask] = comForMask[mask] / areaForMask[mask]
+	print('mask', ('%x'):format(mask), 'com', comForMask[mask])
+end
 
 --[[
 from a perfect sphere:
@@ -218,12 +251,12 @@ function App:initGL(...)
 		generateMipmap = true,
 	}
 
-	local img = Image'continent-mask.png':resize(2048,1024):rgb():setChannels(4)
-	for i=3,img.width*img.height*4,4 do
-		img.buffer[i] = 127
+	local continentImg = continentImg:resize(2048,1024):rgb():setChannels(4)
+	for i=3,continentImg.width*continentImg.height*4,4 do
+		continentImg.buffer[i] = 127
 	end
 	self.continentTex = GLTex2D{
-		image = img,
+		image = continentImg,
 		minFilter = gl.GL_LINEAR,
 		magFilter = gl.GL_LINEAR,
 		generateMipmap = true,
@@ -315,12 +348,32 @@ function App:update()
 	--self.tex:disable()
 	self.shader:useNone()
 	
-	gl.glColor3f(1,0,0)
 	gl.glPointSize(3)
 	gl.glBegin(gl.GL_POINTS)
+	gl.glColor3f(1,0,0)
 	gl.glVertex3d(com:unpack())
 	gl.glEnd()
 	gl.glPointSize(1)
+
+	for mask,com in pairs(comForMask) do
+		gl.glLineWidth(3)
+		gl.glColor3f(0,0,0)
+		gl.glBegin(gl.GL_LINES)
+		gl.glVertex3d(0,0,0)
+		gl.glVertex3d((com * 1.5):unpack())
+		gl.glEnd()
+
+		gl.glLineWidth(1)
+		gl.glBegin(gl.GL_LINES)
+		gl.glColor3f(
+			bit.band(mask, 0xff)/0xff, 
+			bit.band(bit.rshift(mask, 8), 0xff)/0xff, 
+			bit.band(bit.rshift(mask, 16), 0xff)/0xff) 
+		gl.glVertex3d(0,0,0)
+		gl.glVertex3d((com * 1.5):unpack())
+		gl.glEnd()
+	end
+
 
 	App.super.update(self)
 end
