@@ -2,6 +2,11 @@
 require 'ext'
 
 --- BEGIN CUT FROM run.lua
+-- GAAAHHH STANDARDS
+-- physics spherical coordinates: the longitude is φ and the latitude (starting at the north pole and going down) is θ ...
+-- mathematician spherical coordinates: the longitude is θ and the latitude is φ ...
+-- geographic / map charts: the longitude is λ and the latitude is φ ...
+-- so TODO change the calc_* stuff from r_theta_phi to h_phi_lambda ? idk ...
 
 local equatorialRadius = 1
 -- [[ Earth
@@ -107,6 +112,7 @@ assert(continentImg.width == img.width)
 assert(continentImg.height == img.height)
 
 local comForMask = {}
+local comLatLonForMask = {}
 local areaForMask = {}
 
 local matrix = require 'matrix'
@@ -132,7 +138,7 @@ local landArea = 0
 local totalArea = 0
 local e = 0
 local hist = range(0,255):map(function(i) return 0, i end)
-local step = 100
+local step = 600
 for j=0,h-1,step do
 	local lat = (.5 - (j+.5)/h) * 180
 	--local dA = math.abs(dx_dsphere_det_h_eq_0(lat)) * (2 * math.pi) / w * math.pi / h
@@ -201,6 +207,7 @@ print('com lon lat =', latLon)
 for _,mask in ipairs(table.keys(comForMask)) do
 	comForMask[mask] = comForMask[mask] / areaForMask[mask]
 	print('mask', ('%x'):format(mask), 'com', comForMask[mask])
+	comLatLonForMask[mask] = matrix{convertSpheroid3DToLatLon(comForMask[mask]:unpack())}
 end
 
 --[[
@@ -294,35 +301,101 @@ end
 -- globals for gui access
 idivs = 100
 jdivs = 100
+normalizeWeights = true
 sphereCoeff = 0
-polarCoeff = 1
-rectCoeff = 0
+cylCoeff = 0
+equirectCoeff = 0
+aziequiCoeff = 0
+mollweideCoeff = 0
 
-local function vertex(i,j)
-	local u = i/idivs
-	local v = j/jdivs
-	local theta = u*math.pi
-	local phi = v*math.pi*2
-	local costh, sinth = math.cos(theta), math.sin(theta)
-	local cosphi, sinphi = math.cos(phi), math.sin(phi)
-	gl.glTexCoord2d(v, u)
+-- TODO change this to (lat, lon, height)
+-- bleh conventions:
+--  physicist spherical: azimuthal = theta, lon = phi
+--  mathematician spherical: azimuthal = phi, lon = theta
+--  geographer: latitude = phi, lon = lambda
+-- rather than pick one im just gonna say 'azimuthal, latitude, longitude'
+-- oh and unitLonFrac is gonna be from 0=america to 1=east asia, so unitLonFrac==.5 means lon==0
+local function vertex(aziFrac, unitLonFrac, height)
+	local azimuthal = aziFrac * math.pi-- azimuthal angle
+	local lat = .5*math.pi - azimuthal	-- latitude
+	local lonFrac = unitLonFrac - .5
+	local lon = lonFrac * math.pi * 2			-- longitude
+	local cosaz, sinaz = math.cos(azimuthal), math.sin(azimuthal)
+	local coslon, sinlon = math.cos(lon), math.sin(lon)
 	
-	local spherex = sinth * cosphi
-	local spherey = sinth * sinphi
-	local spherez = costh
+	local wgs84_a = 6378.137
 
-	local rectx = 2 * v - 1
-	local recty = (1 - 2 * u) * .5
-	local rectz = 0
+	gl.glTexCoord2d(unitLonFrac, aziFrac)
 
-	local polarx = u * cosphi
-	local polary = u * sinphi
-	local polarz = 0
+	-- spherical coordinates
+	local spherex = sinaz * coslon
+	local spherey = sinaz * sinlon
+	local spherez = cosaz
+	-- rotate back so y is up
+	spherey, spherez = spherez, -spherey
+	-- now rotate so prime meridian is along -z instead of +x
+	spherex, spherez = -spherez, spherex
 
-	local x = sphereCoeff * spherex + rectCoeff * rectx + polarCoeff * polarx
-	local y = sphereCoeff * spherey + rectCoeff * recty + polarCoeff * polary
-	local z = sphereCoeff * spherez + rectCoeff * rectz + polarCoeff * polarz
-	
+	-- cylindrical
+	local cylx = coslon
+	local cyly = sinlon
+	local cylz = lat
+	-- rotate back so y is up
+	cyly, cylz = cylz, -cyly
+	-- now rotate so prime meridian is along -z instead of +x
+	cylx, cylz = -cylz, cylx
+
+	-- equirectangular
+	local equirectx, equirecty, equirectz
+	do
+		local lambda = lon
+		local phi = lat
+		local R = 2/math.pi
+		local lambda0 = 0
+		local phi0 = 0
+		local phi1 = 0
+		equirectx, equirecty, equirectz = 
+			R * (lambda - lambda0) * math.cos(phi1),
+			R * (phi - phi0),
+			height / wgs84_a
+	end
+
+	-- azimuthal equidistant
+	local aziequix, aziequiy, aziequiz =
+		math.cos(lon) * azimuthal,
+		math.sin(lon) * azimuthal,
+		height / wgs84_a
+	-- swap +x to -y
+	aziequix, aziequiy = aziequiy, -aziequix
+
+	local mollweidex, mollweidey, mollweidez
+	do
+		local R = math.pi / 4
+		local lambda = lon
+		local lambda0 = 0	-- in degrees
+		local phi = lat
+		local theta
+		if phi == .5 * math.pi then
+			theta = .5 * math.pi
+		else
+			theta = phi
+			for i=1,10 do
+				local dtheta = (2 * theta + math.sin(2 * theta) - math.pi * math.sin(phi)) / (2 + 2 * math.cos(theta))
+				if math.abs(dtheta) < 1e-5 then break end
+				theta = theta - dtheta
+			end
+		end
+		mollweidex = R * math.sqrt(8) / math.pi * (lambda - lambda0) * math.cos(theta)
+		mollweidey = R * math.sqrt(2) * math.sin(theta)
+		mollweidez = height / wgs84_a
+		if not math.isfinite(mollweidex) then mollweidex = 0 end
+		if not math.isfinite(mollweidey) then mollweidey = 0 end
+		if not math.isfinite(mollweidez) then mollweidez = 0 end
+	end
+
+	local x = sphereCoeff * spherex + cylCoeff * cylx + equirectCoeff * equirectx + aziequiCoeff * aziequix + mollweideCoeff * mollweidex
+	local y = sphereCoeff * spherey + cylCoeff * cyly + equirectCoeff * equirecty + aziequiCoeff * aziequiy + mollweideCoeff * mollweidey
+	local z = sphereCoeff * spherez + cylCoeff * cylz + equirectCoeff * equirectz + aziequiCoeff * aziequiz + mollweideCoeff * mollweidez
 	gl.glVertex3d(x,y,z)
 end
 
@@ -334,12 +407,13 @@ function App:update()
 	self.tex:bind(0)
 	self.continentTex:bind(1)
 	gl.glColor3f(1,1,1)
-	for i=0,idivs-1 do
+	for j=0,jdivs-1 do
 		gl.glColor3f(1,1,1)
 		gl.glBegin(gl.GL_TRIANGLE_STRIP)
-		for j=0,jdivs do
-			vertex(i+1,j)
-			vertex(i,j)
+		for i=0,idivs do
+			local aziFrac = i/idivs
+			vertex(aziFrac, (j+1)/jdivs, 0)
+			vertex(aziFrac, j/jdivs, 0)
 		end
 		gl.glEnd()
 	end
@@ -348,6 +422,7 @@ function App:update()
 	--self.tex:disable()
 	self.shader:useNone()
 	
+-- [[
 	gl.glPointSize(3)
 	gl.glBegin(gl.GL_POINTS)
 	gl.glColor3f(1,0,0)
@@ -357,11 +432,15 @@ function App:update()
 
 	for mask,com in pairs(comForMask) do
 		gl.glLineWidth(3)
+		gl.glDepthMask(gl.GL_FALSE)
 		gl.glColor3f(0,0,0)
 		gl.glBegin(gl.GL_LINES)
 		gl.glVertex3d(0,0,0)
+		
 		gl.glVertex3d((com * 1.5):unpack())
+		
 		gl.glEnd()
+		gl.glDepthMask(gl.GL_TRUE)
 
 		gl.glLineWidth(1)
 		gl.glBegin(gl.GL_LINES)
@@ -373,18 +452,48 @@ function App:update()
 		gl.glVertex3d((com * 1.5):unpack())
 		gl.glEnd()
 	end
-
+--]]
 
 	App.super.update(self)
 end
 
 
+local weightFields = {
+	'sphereCoeff',
+	'cylCoeff',
+	'equirectCoeff',
+	'aziequiCoeff',
+	'mollweideCoeff',
+}
+
 function App:updateGUI()
 	ig.luatableInputInt('idivs', _G, 'idivs')
 	ig.luatableInputInt('jdivs', _G, 'jdivs')
-	ig.luatableSliderFloat('sphereCoeff', _G, 'sphereCoeff', 0, 1)
-	ig.luatableSliderFloat('polarCoeff', _G, 'polarCoeff', 0, 1)
-	ig.luatableSliderFloat('rectCoeff', _G, 'rectCoeff', 0, 1)
+	ig.luatableCheckbox('normalize weights', _G, 'normalizeWeights')
+	local changed
+	for _,field in ipairs(weightFields) do
+		if ig.luatableSliderFloat(field, _G, field, 0, 1) then
+			changed = field
+		end
+	end
+	if normalizeWeights and changed then
+		local restFrac = 1 - _G[changed]
+		local totalRest = 0
+		for _,field in ipairs(weightFields) do
+			if field ~= changed then
+				totalRest = totalRest + _G[field]
+			end
+		end
+		for _,field in ipairs(weightFields) do
+			if field ~= changed then
+				if totalRest == 0 then
+					_G[field] = 0
+				else
+					_G[field] = restFrac * _G[field] / totalRest
+				end
+			end
+		end
+	end
 end
 
 App():run()
