@@ -45,9 +45,10 @@ local function dx_dsphere_det_h_eq_0(lat)
 end
 
 
+-- lon and lat are in degrees
 local function convertLatLonToSpheroid3D(lon, lat)
-	local phi = math.rad(lon)
-	local theta = math.rad(lat)
+	local phi = math.rad(lon)		-- spherical phi
+	local theta = math.rad(lat)		-- spherical theta
 	local cosTheta = math.cos(theta)
 	local sinTheta = math.sin(theta)
 	
@@ -63,14 +64,14 @@ end
 
 -- https://gis.stackexchange.com/questions/28446/computational-most-efficient-way-to-convert-cartesian-to-geodetic-coordinates
 local function convertSpheroid3DToLatLon(x,y,z)
-	--[[
+	-- [[
 	-- this much is always true
 	local phi = math.atan2(y, x);
 	local theta
 	for i=1,10000 do
 		-- spherical:
 		local r2 = math.sqrt(x*x + y*y);
-		local newtheta = math.atan2(z, r2);
+		local newtheta = math.atan(r2 / z);
 		if theta then
 			local dtheta = math.abs(newtheta - theta)
 			--print(dtheta, z)
@@ -80,14 +81,15 @@ local function convertSpheroid3DToLatLon(x,y,z)
 		x,y,z = convertLatLonToSpheroid3D( math.deg(phi), math.deg(theta) )
 	end
 	--]]
-	-- [[ sphere approx
+	--[[ sphere approx
 	local phi = math.atan2(y, x)
 	local theta = math.atan2(z, math.sqrt(x*x + y*y))
 	--]]
 
 	-- lon, lat:
 	return (math.deg(phi) + 180) % 360 - 180, 
-			(math.deg(theta) + 90) % 180 - 90
+			--(math.deg(theta) + 90) % 180 - 90
+			math.deg(theta)
 end
 
 
@@ -139,6 +141,7 @@ local totalArea = 0
 local e = 0
 local hist = range(0,255):map(function(i) return 0, i end)
 local step = 600
+local max_err_lat  = 0
 for j=0,h-1,step do
 	local lat = (.5 - (j+.5)/h) * 180
 	--local dA = math.abs(dx_dsphere_det_h_eq_0(lat)) * (2 * math.pi) / w * math.pi / h
@@ -151,6 +154,7 @@ for j=0,h-1,step do
 		e = i + w * j
 		local lon = ((i+.5)/w - .5) * 360
 		local v = img and img.buffer[e] 
+	
 		if img == nil or v >= 255 then
 			-- consider this coordinate for land sum
 			
@@ -160,9 +164,15 @@ for j=0,h-1,step do
 			--assert(math.isfinite(pt[3]))
 			-- [[ verify accuracy
 			local lon2, lat2 = convertSpheroid3DToLatLon(pt:unpack())
+--if i == 0 then print('lat ' .. lat .. ' lat2 ' .. lat2) end
 			err_lon = err_lon + math.abs(lon-lon2) 
-			err_lat = err_lat + math.abs(lat-lat2)
+			local this_err_lat = math.abs(lat-lat2)
+			max_err_lat = math.max(max_err_lat, this_err_lat)
+			err_lat = err_lat + this_err_lat 
+-- max err can get significant and that leads to a significant total error
+--print(math.abs(lat-lat2))
 			--]]
+		
 			com = com + pt * dA
 			landArea = landArea + dA
 			
@@ -188,8 +198,9 @@ for j=0,h-1,step do
 		print('landArea', landArea)
 	end
 end
-print('reconstruction lat err', err_lat)
-print('reconstruction lon err', err_lon)
+print('reconstruction lat error', err_lat)
+print('reconstruction lon error', err_lon)
+print('max lat error', max_err_lat) 
 print('landArea', landArea)
 print('totalArea', totalArea)
 print('totalArea / 4pi', totalArea / (4 * math.pi))
