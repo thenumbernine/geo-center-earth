@@ -29,7 +29,7 @@ end
 
 -- |d(x,y,z)/d(h,theta,phi)| for h=0
 local function dx_dsphere_det_h_eq_0(lat) 
-	local theta = math.rad(lat)
+	local theta = math.rad(lat)		-- spherical inclination angle (not azumuthal theta)
 	local sinTheta = math.sin(theta)
 	local cosTheta = math.cos(theta)
 	
@@ -46,15 +46,14 @@ end
 
 
 -- lon and lat are in degrees
-local function convertLatLonToSpheroid3D(lon, lat)
+local function convertLatLonToSpheroid3D(lat, lon, height)
 	local phi = math.rad(lon)		-- spherical phi
-	local theta = math.rad(lat)		-- spherical theta
+	local theta = math.rad(lat)		-- spherical inclination angle (not azumuthal theta)
 	local cosTheta = math.cos(theta)
 	local sinTheta = math.sin(theta)
 	
 	local N = calc_N(sinTheta, equatorialRadius, eccentricitySquared)
 	
-	local height = 0
 	local NPlusH = N + height
 	return 
 		NPlusH * cosTheta * math.cos(phi),
@@ -67,7 +66,7 @@ local function convertSpheroid3DToLatLon(x,y,z)
 	-- [[
 	-- this much is always true
 	local phi = math.atan2(y, x);
-	local theta
+	local theta			-- spherical inclination angle
 	for i=1,10000 do
 		-- spherical:
 		local r2 = math.sqrt(x*x + y*y);
@@ -78,8 +77,12 @@ local function convertSpheroid3DToLatLon(x,y,z)
 			if dtheta < 1e-15 then break end
 		end
 		theta = newtheta
-		x,y,z = convertLatLonToSpheroid3D( math.deg(phi), math.deg(theta) )
+		x,y,z = convertLatLonToSpheroid3D(math.deg(theta), math.deg(phi), 0)
 	end
+	
+	local NPlusHTimesCosTheta = math.sqrt(x*x + y*y)
+	local NPlusH = NPlusHTimesCosTheta / math.cos(theta)
+	local height = NPlusH - calc_N(math.sin(theta), equatorialRadius, eccentricitySquared)
 	--]]
 	--[[ sphere approx
 	local phi = math.atan2(y, x)
@@ -87,9 +90,10 @@ local function convertSpheroid3DToLatLon(x,y,z)
 	--]]
 
 	-- lon, lat:
-	return (math.deg(phi) + 180) % 360 - 180, 
-			--(math.deg(theta) + 90) % 180 - 90
-			math.deg(theta)
+	return 
+		math.deg(theta),
+		(math.deg(phi) + 180) % 360 - 180, 
+		height
 end
 
 
@@ -114,7 +118,7 @@ assert(continentImg.width == img.width)
 assert(continentImg.height == img.height)
 
 local comForMask = {}
-local comLatLonForMask = {}
+local comLatLonHeightForMask = {}
 local areaForMask = {}
 
 local matrix = require 'matrix'
@@ -124,7 +128,7 @@ local mass = 0
 --[[
 local com = matrix{0.6047097872861, 0.35902954396197, 0.7109316842868}
 print('com',com)
-print('lon lat of com',convertSpheroid3DToLatLon(com:unpack()))
+print('lat lon height of com',convertSpheroid3DToLatLon(com:unpack()))
 --os.exit()
 --]]
 
@@ -135,6 +139,7 @@ local imgsize = w * h
 
 local err_lon = 0
 local err_lat = 0
+local err_height = 0
 
 local landArea = 0
 local totalArea = 0
@@ -157,18 +162,20 @@ for j=0,h-1,step do
 	
 		if img == nil or v >= 255 then
 			-- consider this coordinate for land sum
-			
-			local pt = matrix{convertLatLonToSpheroid3D(lon, lat)}
+
+			local height = 0
+			local pt = matrix{convertLatLonToSpheroid3D(lat, lon, height)}
 			--assert(math.isfinite(pt[1]))
 			--assert(math.isfinite(pt[2]))
 			--assert(math.isfinite(pt[3]))
 			-- [[ verify accuracy
-			local lon2, lat2 = convertSpheroid3DToLatLon(pt:unpack())
+			local lat2, lon2, height2 = convertSpheroid3DToLatLon(pt:unpack())
 --if i == 0 then print('lat ' .. lat .. ' lat2 ' .. lat2) end
 			err_lon = err_lon + math.abs(lon-lon2) 
 			local this_err_lat = math.abs(lat-lat2)
 			max_err_lat = math.max(max_err_lat, this_err_lat)
-			err_lat = err_lat + this_err_lat 
+			err_lat = err_lat + this_err_lat
+			err_height = err_height + math.abs(height2-height)
 -- max err can get significant and that leads to a significant total error
 --print(math.abs(lat-lat2))
 			--]]
@@ -198,8 +205,9 @@ for j=0,h-1,step do
 		print('landArea', landArea)
 	end
 end
-print('reconstruction lat error', err_lat)
 print('reconstruction lon error', err_lon)
+print('reconstruction lat error', err_lat)
+print('reconstruction height error', err_height)
 print('max lat error', max_err_lat) 
 print('landArea', landArea)
 print('totalArea', totalArea)
@@ -212,13 +220,13 @@ local com2 = com / comNorm
 print('com = ', com)
 print('com2 = ', com2)
 local latLon = matrix{convertSpheroid3DToLatLon(com2:unpack())}
-print('com lon lat =', latLon) 
+print('com lat lon =', latLon) 
 --]=]
 
 for _,mask in ipairs(table.keys(comForMask)) do
 	comForMask[mask] = comForMask[mask] / areaForMask[mask]
 	print('mask', ('%x'):format(mask), 'com', comForMask[mask])
-	comLatLonForMask[mask] = matrix{convertSpheroid3DToLatLon(comForMask[mask]:unpack())}
+	comLatLonHeightForMask[mask] = matrix{convertSpheroid3DToLatLon(comForMask[mask]:unpack())}
 end
 
 --[[
