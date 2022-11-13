@@ -45,7 +45,10 @@ local function dx_dsphere_det_h_eq_0(lat)
 end
 
 
--- lon and lat are in degrees
+-- lat and lon are in degrees, height is in meters
+-- lat = [-90,90]
+-- lon = [-180,180]
+-- height >= 0
 local function convertLatLonToSpheroid3D(lat, lon, height)
 	local phi = math.rad(lon)		-- spherical phi
 	local theta = math.rad(lat)		-- spherical inclination angle (not azumuthal theta)
@@ -334,13 +337,18 @@ mollweideCoeff = 0
 --  geographer: latitude = phi, lon = lambda
 -- rather than pick one im just gonna say 'azimuthal, latitude, longitude'
 -- oh and unitLonFrac is gonna be from 0=america to 1=east asia, so unitLonFrac==.5 means lon==0
-local function vertex(aziFrac, unitLonFrac, height)
-	local azimuthal = aziFrac * math.pi-- azimuthal angle
-	local lat = .5*math.pi - azimuthal	-- latitude
-	local lonFrac = unitLonFrac - .5
-	local lon = lonFrac * math.pi * 2			-- longitude
+local function vertex(lat, lon, height)
+	local latrad = math.rad(lat)
+	local azimuthal = .5*math.pi - latrad
+	local aziFrac = azimuthal / math.pi
+
+	local lonrad = math.rad(lon)
+	local lonFrac = lonrad / (2 * math.pi)
+	local unitLonFrac = lonFrac + .5
+
 	local cosaz, sinaz = math.cos(azimuthal), math.sin(azimuthal)
-	local coslon, sinlon = math.cos(lon), math.sin(lon)
+	local coslon = math.cos(lonrad)
+	local sinlon = math.sin(lonrad)
 	
 	local wgs84_a = 6378.137
 
@@ -358,7 +366,7 @@ local function vertex(aziFrac, unitLonFrac, height)
 	-- cylindrical
 	local cylx = coslon
 	local cyly = sinlon
-	local cylz = lat
+	local cylz = latrad
 	-- rotate back so y is up
 	cyly, cylz = cylz, -cyly
 	-- now rotate so prime meridian is along -z instead of +x
@@ -367,8 +375,8 @@ local function vertex(aziFrac, unitLonFrac, height)
 	-- equirectangular
 	local equirectx, equirecty, equirectz
 	do
-		local lambda = lon
-		local phi = lat
+		local lambda = lonrad
+		local phi = latrad
 		local R = 2/math.pi
 		local lambda0 = 0
 		local phi0 = 0
@@ -381,8 +389,8 @@ local function vertex(aziFrac, unitLonFrac, height)
 
 	-- azimuthal equidistant
 	local aziequix, aziequiy, aziequiz =
-		math.cos(lon) * azimuthal,
-		math.sin(lon) * azimuthal,
+		math.cos(lonrad) * azimuthal,
+		math.sin(lonrad) * azimuthal,
 		height / wgs84_a
 	-- swap +x to -y
 	aziequix, aziequiy = aziequiy, -aziequix
@@ -390,9 +398,9 @@ local function vertex(aziFrac, unitLonFrac, height)
 	local mollweidex, mollweidey, mollweidez
 	do
 		local R = math.pi / 4
-		local lambda = lon
+		local lambda = lonrad
 		local lambda0 = 0	-- in degrees
-		local phi = lat
+		local phi = latrad
 		local theta
 		if phi == .5 * math.pi then
 			theta = .5 * math.pi
@@ -431,8 +439,21 @@ function App:update()
 		gl.glBegin(gl.GL_TRIANGLE_STRIP)
 		for i=0,idivs do
 			local aziFrac = i/idivs
-			vertex(aziFrac, (j+1)/jdivs, 0)
-			vertex(aziFrac, j/jdivs, 0)
+			local azimuthal = aziFrac * math.pi-- azimuthal angle
+			local latrad = .5*math.pi - azimuthal	-- latitude
+			local lat = math.deg(latrad)
+
+			local unitLonFrac = (j+1)/jdivs
+			local lonFrac = unitLonFrac - .5
+			local lonrad = lonFrac * 2 * math.pi			-- longitude
+			local lon = math.deg(lonrad)
+			vertex(lat, lon, 0)
+
+			local unitLonFrac = j/jdivs
+			local lonFrac = unitLonFrac - .5
+			local lonrad = lonFrac * 2 * math.pi			-- longitude
+			local lon = math.deg(lonrad)
+			vertex(lat, lon, 0)
 		end
 		gl.glEnd()
 	end
