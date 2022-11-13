@@ -16,6 +16,7 @@ local eccentricitySquared = (2 * inverseFlattening - 1) / (inverseFlattening * i
 --[[ perfect sphere
 local eccentricitySquared = 0
 --]]
+local wgs84_a = 6378.137
 
 local function calc_N(sinTheta, equatorialRadius, eccentricitySquared)
 	local denom = math.sqrt(1 - eccentricitySquared * sinTheta * sinTheta)
@@ -143,6 +144,7 @@ local imgsize = w * h
 local err_lon = 0
 local err_lat = 0
 local err_height = 0
+local ravg = 0
 
 local landArea = 0
 local totalArea = 0
@@ -182,7 +184,9 @@ for j=0,h-1,step do
 -- max err can get significant and that leads to a significant total error
 --print(math.abs(lat-lat2))
 			--]]
-		
+
+			ravg = ravg + (pt * pt) * dA
+
 			com = com + pt * dA
 			landArea = landArea + dA
 			
@@ -215,6 +219,7 @@ print('max lat error', max_err_lat)
 print('landArea', landArea)
 print('totalArea', totalArea)
 print('totalArea / 4pi', totalArea / (4 * math.pi))
+print('ravg', ravg / landArea)
 print('% of earth covered by land =', (landArea / totalArea) * 100)
 print('% of earth covered by water =', (1 - landArea / totalArea) * 100)
 local comNorm = com:norm()
@@ -324,7 +329,7 @@ end
 idivs = 100
 jdivs = 100
 normalizeWeights = true
-sphereCoeff = 0
+spheroidCoeff = 0
 cylCoeff = 0
 equirectCoeff = 0
 aziequiCoeff = 0
@@ -349,24 +354,21 @@ local function vertex(lat, lon, height)
 	local cosaz, sinaz = math.cos(azimuthal), math.sin(azimuthal)
 	local coslon = math.cos(lonrad)
 	local sinlon = math.sin(lonrad)
-	
-	local wgs84_a = 6378.137
+
+	local r = height + 1
 
 	gl.glTexCoord2d(unitLonFrac, aziFrac)
 
-	-- spherical coordinates
-	local spherex = sinaz * coslon
-	local spherey = sinaz * sinlon
-	local spherez = cosaz
+	local spheroidx, spheroidy, spheroidz = convertLatLonToSpheroid3D(lat, lon, height)
 	-- rotate back so y is up
-	spherey, spherez = spherez, -spherey
+	spheroidy, spheroidz = spheroidz, -spheroidy
 	-- now rotate so prime meridian is along -z instead of +x
-	spherex, spherez = -spherez, spherex
+	spheroidx, spheroidz = -spheroidz, spheroidx
 
 	-- cylindrical
-	local cylx = coslon
-	local cyly = sinlon
-	local cylz = latrad
+	local cylx = r * coslon
+	local cyly = r * sinlon
+	local cylz = r * latrad
 	-- rotate back so y is up
 	cyly, cylz = cylz, -cyly
 	-- now rotate so prime meridian is along -z instead of +x
@@ -384,14 +386,14 @@ local function vertex(lat, lon, height)
 		equirectx, equirecty, equirectz = 
 			R * (lambda - lambda0) * math.cos(phi1),
 			R * (phi - phi0),
-			height / wgs84_a
+			height
 	end
 
 	-- azimuthal equidistant
 	local aziequix, aziequiy, aziequiz =
 		math.cos(lonrad) * azimuthal,
 		math.sin(lonrad) * azimuthal,
-		height / wgs84_a
+		height
 	-- swap +x to -y
 	aziequix, aziequiy = aziequiy, -aziequix
 
@@ -414,15 +416,15 @@ local function vertex(lat, lon, height)
 		end
 		mollweidex = R * math.sqrt(8) / math.pi * (lambda - lambda0) * math.cos(theta)
 		mollweidey = R * math.sqrt(2) * math.sin(theta)
-		mollweidez = height / wgs84_a
+		mollweidez = height
 		if not math.isfinite(mollweidex) then mollweidex = 0 end
 		if not math.isfinite(mollweidey) then mollweidey = 0 end
 		if not math.isfinite(mollweidez) then mollweidez = 0 end
 	end
 
-	local x = sphereCoeff * spherex + cylCoeff * cylx + equirectCoeff * equirectx + aziequiCoeff * aziequix + mollweideCoeff * mollweidex
-	local y = sphereCoeff * spherey + cylCoeff * cyly + equirectCoeff * equirecty + aziequiCoeff * aziequiy + mollweideCoeff * mollweidey
-	local z = sphereCoeff * spherez + cylCoeff * cylz + equirectCoeff * equirectz + aziequiCoeff * aziequiz + mollweideCoeff * mollweidez
+	local x = spheroidCoeff * spheroidx + cylCoeff * cylx + equirectCoeff * equirectx + aziequiCoeff * aziequix + mollweideCoeff * mollweidex
+	local y = spheroidCoeff * spheroidy + cylCoeff * cyly + equirectCoeff * equirecty + aziequiCoeff * aziequiy + mollweideCoeff * mollweidey
+	local z = spheroidCoeff * spheroidz + cylCoeff * cylz + equirectCoeff * equirectz + aziequiCoeff * aziequiz + mollweideCoeff * mollweidez
 	gl.glVertex3d(x,y,z)
 end
 
@@ -470,15 +472,21 @@ function App:update()
 	gl.glEnd()
 	gl.glPointSize(1)
 
-	for mask,com in pairs(comForMask) do
+	local function drawCOMLine(com)
+		local lat, lon, height = table.unpack(com)
+		local n = 10
+		for i=0,n do
+			local height = 2*i/n
+			vertex(lat, lon, height)
+		end
+	end
+
+	for mask,com in pairs(comLatLonHeightForMask) do
 		gl.glLineWidth(3)
 		gl.glDepthMask(gl.GL_FALSE)
 		gl.glColor3f(0,0,0)
 		gl.glBegin(gl.GL_LINES)
-		gl.glVertex3d(0,0,0)
-		
-		gl.glVertex3d((com * 1.5):unpack())
-		
+		drawCOMLine(com)
 		gl.glEnd()
 		gl.glDepthMask(gl.GL_TRUE)
 
@@ -488,8 +496,7 @@ function App:update()
 			bit.band(mask, 0xff)/0xff, 
 			bit.band(bit.rshift(mask, 8), 0xff)/0xff, 
 			bit.band(bit.rshift(mask, 16), 0xff)/0xff) 
-		gl.glVertex3d(0,0,0)
-		gl.glVertex3d((com * 1.5):unpack())
+		drawCOMLine(com)
 		gl.glEnd()
 	end
 --]]
@@ -499,7 +506,7 @@ end
 
 
 local weightFields = {
-	'sphereCoeff',
+	'spheroidCoeff',
 	'cylCoeff',
 	'equirectCoeff',
 	'aziequiCoeff',
