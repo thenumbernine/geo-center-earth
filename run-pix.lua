@@ -37,6 +37,8 @@ print('lat lon height of com',wgs84:chartInv(com:unpack()))
 --os.exit()
 --]]
 
+-- TODO use these too
+-- {name='plates', data=assert(json.decode(file'tectonicplates/GeoJSON/PB2002_plates.json':read()))},
 
 -- [=[
 local lastTime = os.time()

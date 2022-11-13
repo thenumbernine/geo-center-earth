@@ -1,7 +1,9 @@
 --[[
 I use these often enough that they are going to go into a library soon enough
+
 2D charts will be xy coordinates, z will be for height
-3D charts will also be oriented for default view in the xy plane (i.e. y+ will be north pole, z+ will be prime meridian)
+
+3D charts  are z+ = north pole, x+ = prime meridian
 
 
 GAAAHHH STANDARDS
@@ -18,10 +20,8 @@ local charts = {
 		c.name = 'WGS84'
 		
 		-- specific to WGS84:
-		local inverseFlattening = 298.257223563
-		c.inverseFlattening = inverseFlattening
-		local eccentricitySquared = (2 * inverseFlattening - 1) / (inverseFlattening * inverseFlattening)
-		c.eccentricitySquared = eccentricitySquared
+		c.inverseFlattening = 298.257223563
+		c.eccentricitySquared = (2 * c.inverseFlattening - 1) / (c.inverseFlattening * c.inverseFlattening)
 		
 		c.a = 6378137	-- m ... earth equitorial radius
 		c.b = 6356752.3142	-- m ... earth polar radius
@@ -43,13 +43,13 @@ local charts = {
 			local cosTheta = math.cos(theta)
 			
 			local h = 0
-			local N = self:calc_N(sinTheta, self.a, eccentricitySquared)
+			local N = self:calc_N(sinTheta, self.a, self.eccentricitySquared)
 			local dN_dTheta = calc_dN_dTheta(sinTheta, cosTheta, self.a, eccentricitySquared)
 			local cosTheta2 = cosTheta * cosTheta
 			return -N * (
 				N * cosTheta 
-				+ eccentricitySquared * cosTheta2 * N * cosTheta
-				+ eccentricitySquared * cosTheta2 * dN_dTheta * sinTheta
+				+ self.eccentricitySquared * cosTheta2 * N * cosTheta
+				+ self.eccentricitySquared * cosTheta2 * dN_dTheta * sinTheta
 			)
 		end
 
@@ -64,13 +64,13 @@ local charts = {
 			local cosTheta = math.cos(theta)
 			local sinTheta = math.sin(theta)
 			
-			local N = self:calc_N(sinTheta, self.a, eccentricitySquared)
+			local N = self:calc_N(sinTheta, self.a, self.eccentricitySquared)
 			
 			local NPlusH = N + height
 			return 
 				NPlusH * cosTheta * math.cos(phi),
 				NPlusH * cosTheta * math.sin(phi),
-				(N * (1 - eccentricitySquared) + height) * sinTheta
+				(N * (1 - self.eccentricitySquared) + height) * sinTheta
 		end
 			
 		-- x,y,z = meters
@@ -97,7 +97,7 @@ local charts = {
 			
 			local NPlusHTimesCosTheta = math.sqrt(x*x + y*y)
 			local NPlusH = NPlusHTimesCosTheta / math.cos(theta)
-			local height = NPlusH - self:calc_N(math.sin(theta), self.a, eccentricitySquared)
+			local height = NPlusH - self:calc_N(math.sin(theta), self.a, self.eccentricitySquared)
 
 			-- lat, lon, height:
 			return 
