@@ -2,6 +2,14 @@
 I use these often enough that they are going to go into a library soon enough
 2D charts will be xy coordinates, z will be for height
 3D charts will also be oriented for default view in the xy plane (i.e. y+ will be north pole, z+ will be prime meridian)
+
+
+GAAAHHH STANDARDS
+physics spherical coordinates: the longitude is φ and the latitude (starting at the north pole and going down) is θ ...
+mathematician spherical coordinates: the longitude is θ and the latitude is φ ...
+geographic / map charts: the longitude is λ and the latitude is φ ...
+so TODO change the calc_* stuff from r_theta_phi to h_phi_lambda ? idk ...
+
 --]]
 local charts = {
 	(function()
@@ -98,6 +106,87 @@ local charts = {
 				height
 		end
 	
+		return c
+	end)(),
+	
+	(function()
+		local c = {}
+		c.name = 'cylinder'
+		function c:chart(lat, lon, height)
+			local r = height + 1
+			local latrad = math.rad(lat)
+			local lonrad = math.rad(lon)
+			return 
+				r * math.cos(lonrad),
+				r * math.sin(lonrad),
+				r * latrad
+		end
+		-- TODO c:chartInv
+		return c
+	end)(),
+
+	(function()
+		local c = {}
+		c.name = 'equirectangular'
+		function c:chart(lat, lon, height)
+			local lambda = math.rad(lon)
+			local phi = math.rad(lat)
+			local R = 2/math.pi
+			local lambda0 = 0
+			local phi0 = 0
+			local phi1 = 0
+			return
+				R * (lambda - lambda0) * math.cos(phi1),
+				R * (phi - phi0),
+				height
+		end
+		return c
+	end)(),
+
+	(function()
+		local c = {}
+		c.name = 'azimuthalEquidistant'
+		function c:chart(lat, lon, height)
+			local lonrad = math.rad(lon)
+			local latrad = math.rad(lat)
+			local azimuthal = .5*math.pi - latrad
+			return
+				-math.sin(lonrad + math.pi) * azimuthal,
+				math.cos(lonrad + math.pi) * azimuthal,
+				height
+		end
+		return c
+	end)(),
+
+	(function()
+		local c = {}
+		c.name = 'mollweide'
+		function c:chart(lat, lon, height)
+			local lonrad = math.rad(lon)
+			local R = math.pi / 4
+			local lambda = lonrad
+			local lambda0 = 0	-- in degrees
+			local latrad = math.rad(lat)
+			local phi = latrad
+			local theta
+			if phi == .5 * math.pi then
+				theta = .5 * math.pi
+			else
+				theta = phi
+				for i=1,10 do
+					local dtheta = (2 * theta + math.sin(2 * theta) - math.pi * math.sin(phi)) / (2 + 2 * math.cos(theta))
+					if math.abs(dtheta) < 1e-5 then break end
+					theta = theta - dtheta
+				end
+			end
+			mollweidex = R * math.sqrt(8) / math.pi * (lambda - lambda0) * math.cos(theta)
+			mollweidey = R * math.sqrt(2) * math.sin(theta)
+			mollweidez = height
+			if not math.isfinite(mollweidex) then mollweidex = 0 end
+			if not math.isfinite(mollweidey) then mollweidey = 0 end
+			if not math.isfinite(mollweidez) then mollweidez = 0 end
+			return mollweidex, mollweidey, mollweidez
+		end
 		return c
 	end)(),
 }

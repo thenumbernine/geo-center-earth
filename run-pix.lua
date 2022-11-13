@@ -1,31 +1,8 @@
 #!/usr/bin/env luajit
 require 'ext'
 
---- BEGIN CUT FROM run.lua
--- GAAAHHH STANDARDS
--- physics spherical coordinates: the longitude is φ and the latitude (starting at the north pole and going down) is θ ...
--- mathematician spherical coordinates: the longitude is θ and the latitude is φ ...
--- geographic / map charts: the longitude is λ and the latitude is φ ...
--- so TODO change the calc_* stuff from r_theta_phi to h_phi_lambda ? idk ...
-
 local charts = require 'geographic-charts'
 local wgs84 = charts.WGS84
-
--- lat and lon are in degrees, height is in meters
--- lat = [-90,90]
--- lon = [-180,180]
--- height >= 0
-local function convertLatLonToSpheroid3D(lat, lon, height)
-	return wgs84:chart(lat, lon, height)
-end
-
--- https://gis.stackexchange.com/questions/28446/computational-most-efficient-way-to-convert-cartesian-to-geodetic-coordinates
-local function convertSpheroid3DToLatLon(x,y,z)
-	return wgs84:chartInv(x,y,z)
-end
-
-
---- END CUT FROM run.lua
 
 -- [[
 local Image = require 'image'
@@ -56,7 +33,7 @@ local mass = 0
 --[[
 local com = matrix{0.6047097872861, 0.35902954396197, 0.7109316842868}
 print('com',com)
-print('lat lon height of com',convertSpheroid3DToLatLon(com:unpack()))
+print('lat lon height of com',wgs84:chartInv(com:unpack()))
 --os.exit()
 --]]
 
@@ -93,12 +70,12 @@ for j=0,h-1,step do
 			-- consider this coordinate for land sum
 
 			local height = 0
-			local pt = matrix{convertLatLonToSpheroid3D(lat, lon, height)} / wgs84.a
+			local pt = matrix{wgs84:chart(lat, lon, height)} / wgs84.a
 			--assert(math.isfinite(pt[1]))
 			--assert(math.isfinite(pt[2]))
 			--assert(math.isfinite(pt[3]))
 			-- [[ verify accuracy
-			local lat2, lon2, height2 = convertSpheroid3DToLatLon((pt * wgs84.a):unpack())
+			local lat2, lon2, height2 = wgs84:chartInv((pt * wgs84.a):unpack())
 --if i == 0 then print('lat ' .. lat .. ' lat2 ' .. lat2) end
 			err_lon = err_lon + math.abs(lon-lon2) 
 			local this_err_lat = math.abs(lat-lat2)
@@ -151,14 +128,14 @@ print('com norm', comNorm)
 local com2 = com / comNorm 
 print('com = ', com)
 print('com2 = ', com2)
-local latLon = matrix{convertSpheroid3DToLatLon((com2 * wgs84.a):unpack())}
+local latLon = matrix{wgs84:chartInv((com2 * wgs84.a):unpack())}
 print('com lat lon =', latLon) 
 --]=]
 
 for _,mask in ipairs(table.keys(comForMask)) do
 	comForMask[mask] = comForMask[mask] / areaForMask[mask]
 	print('mask', ('%x'):format(mask), 'com', comForMask[mask])
-	comLatLonHeightForMask[mask] = matrix{convertSpheroid3DToLatLon((comForMask[mask] * wgs84.a):unpack())}
+	comLatLonHeightForMask[mask] = matrix{wgs84:chartInv((comForMask[mask] * wgs84.a):unpack())}
 end
 
 print'resizing images...'
@@ -267,16 +244,10 @@ local function vertex(lat, lon, height)
 	local lonrad = math.rad(lon)
 	local lonFrac = lonrad / (2 * math.pi)
 	local unitLonFrac = lonFrac + .5
-
-	local cosaz, sinaz = math.cos(azimuthal), math.sin(azimuthal)
-	local coslon = math.cos(lonrad)
-	local sinlon = math.sin(lonrad)
-
-	local r = height + 1
-
+	
 	gl.glTexCoord2d(unitLonFrac, aziFrac)
 
-	local spheroidx, spheroidy, spheroidz = convertLatLonToSpheroid3D(lat, lon, height)
+	local spheroidx, spheroidy, spheroidz = wgs84:chart(lat, lon, height)
 	spheroidx = spheroidx / wgs84.a
 	spheroidy = spheroidy / wgs84.a
 	spheroidz = spheroidz / wgs84.a
@@ -286,61 +257,15 @@ local function vertex(lat, lon, height)
 	spheroidx, spheroidz = -spheroidz, spheroidx
 
 	-- cylindrical
-	local cylx = r * coslon
-	local cyly = r * sinlon
-	local cylz = r * latrad
+	local cylx, cyly, cylz = charts.cylinder:chart(lat, lon, height)
 	-- rotate back so y is up
 	cyly, cylz = cylz, -cyly
 	-- now rotate so prime meridian is along -z instead of +x
 	cylx, cylz = -cylz, cylx
 
-	-- equirectangular
-	local equirectx, equirecty, equirectz
-	do
-		local lambda = lonrad
-		local phi = latrad
-		local R = 2/math.pi
-		local lambda0 = 0
-		local phi0 = 0
-		local phi1 = 0
-		equirectx, equirecty, equirectz = 
-			R * (lambda - lambda0) * math.cos(phi1),
-			R * (phi - phi0),
-			height
-	end
-
-	-- azimuthal equidistant
-	local aziequix, aziequiy, aziequiz =
-		math.cos(lonrad) * azimuthal,
-		math.sin(lonrad) * azimuthal,
-		height
-	-- swap +x to -y
-	aziequix, aziequiy = aziequiy, -aziequix
-
-	local mollweidex, mollweidey, mollweidez
-	do
-		local R = math.pi / 4
-		local lambda = lonrad
-		local lambda0 = 0	-- in degrees
-		local phi = latrad
-		local theta
-		if phi == .5 * math.pi then
-			theta = .5 * math.pi
-		else
-			theta = phi
-			for i=1,10 do
-				local dtheta = (2 * theta + math.sin(2 * theta) - math.pi * math.sin(phi)) / (2 + 2 * math.cos(theta))
-				if math.abs(dtheta) < 1e-5 then break end
-				theta = theta - dtheta
-			end
-		end
-		mollweidex = R * math.sqrt(8) / math.pi * (lambda - lambda0) * math.cos(theta)
-		mollweidey = R * math.sqrt(2) * math.sin(theta)
-		mollweidez = height
-		if not math.isfinite(mollweidex) then mollweidex = 0 end
-		if not math.isfinite(mollweidey) then mollweidey = 0 end
-		if not math.isfinite(mollweidez) then mollweidez = 0 end
-	end
+	local equirectx, equirecty, equirectz = charts.equirectangular:chart(lat, lon, height)
+	local aziequix, aziequiy, aziequiz = charts.azimuthalEquidistant:chart(lat, lon, height)
+	local mollweidex, mollweidey, mollweidez = charts.mollweide:chart(lat, lon, height)
 
 	local x = spheroidCoeff * spheroidx + cylCoeff * cylx + equirectCoeff * equirectx + aziequiCoeff * aziequix + mollweideCoeff * mollweidex
 	local y = spheroidCoeff * spheroidy + cylCoeff * cyly + equirectCoeff * equirecty + aziequiCoeff * aziequiy + mollweideCoeff * mollweidey
