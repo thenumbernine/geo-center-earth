@@ -8,96 +8,20 @@ require 'ext'
 -- geographic / map charts: the longitude is λ and the latitude is φ ...
 -- so TODO change the calc_* stuff from r_theta_phi to h_phi_lambda ? idk ...
 
-local equatorialRadius = 1
--- [[ Earth
-local inverseFlattening = 298.257223563
-local eccentricitySquared = (2 * inverseFlattening - 1) / (inverseFlattening * inverseFlattening)
---]]
---[[ perfect sphere
-local eccentricitySquared = 0
---]]
-local wgs84_a = 6378.137
-
-local function calc_N(sinTheta, equatorialRadius, eccentricitySquared)
-	local denom = math.sqrt(1 - eccentricitySquared * sinTheta * sinTheta)
-	return equatorialRadius / denom
-end
-
-local function calc_dN_dTheta(sinTheta, cosTheta, equatorialRadius, eccentricitySquared)
-	local denom = math.sqrt(1 - eccentricitySquared * sinTheta * sinTheta)
-	return eccentricitySquared * sinTheta * cosTheta * equatorialRadius / (denom * denom * denom)
-end
-
--- |d(x,y,z)/d(h,theta,phi)| for h=0
-local function dx_dsphere_det_h_eq_0(lat) 
-	local theta = math.rad(lat)		-- spherical inclination angle (not azumuthal theta)
-	local sinTheta = math.sin(theta)
-	local cosTheta = math.cos(theta)
-	
-	local h = 0
-	local N = calc_N(sinTheta, equatorialRadius, eccentricitySquared)
-	local dN_dTheta = calc_dN_dTheta(sinTheta, cosTheta, equatorialRadius, eccentricitySquared)
-	local cosTheta2 = cosTheta * cosTheta
-	return -N * (
-		N * cosTheta 
-		+ eccentricitySquared * cosTheta2 * N * cosTheta
-		+ eccentricitySquared * cosTheta2 * dN_dTheta * sinTheta
-	)
-end
-
+local charts = require 'geographic-charts'
+local wgs84 = charts.WGS84
 
 -- lat and lon are in degrees, height is in meters
 -- lat = [-90,90]
 -- lon = [-180,180]
 -- height >= 0
 local function convertLatLonToSpheroid3D(lat, lon, height)
-	local phi = math.rad(lon)		-- spherical phi
-	local theta = math.rad(lat)		-- spherical inclination angle (not azumuthal theta)
-	local cosTheta = math.cos(theta)
-	local sinTheta = math.sin(theta)
-	
-	local N = calc_N(sinTheta, equatorialRadius, eccentricitySquared)
-	
-	local NPlusH = N + height
-	return 
-		NPlusH * cosTheta * math.cos(phi),
-		NPlusH * cosTheta * math.sin(phi),
-		(N * (1 - eccentricitySquared) + height) * sinTheta
+	return wgs84:chart(lat, lon, height)
 end
 
 -- https://gis.stackexchange.com/questions/28446/computational-most-efficient-way-to-convert-cartesian-to-geodetic-coordinates
 local function convertSpheroid3DToLatLon(x,y,z)
-	-- [[
-	-- this much is always true
-	local phi = math.atan2(y, x);
-	local theta			-- spherical inclination angle
-	for i=1,10000 do
-		-- spherical:
-		local r2 = math.sqrt(x*x + y*y);
-		local newtheta = math.atan(r2 / z);
-		if theta then
-			local dtheta = math.abs(newtheta - theta)
-			--print(dtheta, z)
-			if dtheta < 1e-15 then break end
-		end
-		theta = newtheta
-		x,y,z = convertLatLonToSpheroid3D(math.deg(theta), math.deg(phi), 0)
-	end
-	
-	local NPlusHTimesCosTheta = math.sqrt(x*x + y*y)
-	local NPlusH = NPlusHTimesCosTheta / math.cos(theta)
-	local height = NPlusH - calc_N(math.sin(theta), equatorialRadius, eccentricitySquared)
-	--]]
-	--[[ sphere approx
-	local phi = math.atan2(y, x)
-	local theta = math.atan2(z, math.sqrt(x*x + y*y))
-	--]]
-
-	-- lon, lat:
-	return 
-		math.deg(theta),
-		(math.deg(phi) + 180) % 360 - 180, 
-		height
+	return wgs84:chartInv(x,y,z)
 end
 
 
@@ -154,7 +78,7 @@ local step = 600
 local max_err_lat  = 0
 for j=0,h-1,step do
 	local lat = (.5 - (j+.5)/h) * 180
-	--local dA = math.abs(dx_dsphere_det_h_eq_0(lat)) * (2 * math.pi) / w * math.pi / h
+	--local dA = math.abs(wgs84:dx_dsphere_det_h_eq_0(lat)) * (2 * math.pi) / w * math.pi / h
 	local dtheta = (math.pi * step) / h
 	local dphi = (2 * math.pi * step) / w
 	local sintheta = math.sin((j+.5) / h * math.pi)
@@ -169,12 +93,12 @@ for j=0,h-1,step do
 			-- consider this coordinate for land sum
 
 			local height = 0
-			local pt = matrix{convertLatLonToSpheroid3D(lat, lon, height)}
+			local pt = matrix{convertLatLonToSpheroid3D(lat, lon, height)} / wgs84.a
 			--assert(math.isfinite(pt[1]))
 			--assert(math.isfinite(pt[2]))
 			--assert(math.isfinite(pt[3]))
 			-- [[ verify accuracy
-			local lat2, lon2, height2 = convertSpheroid3DToLatLon(pt:unpack())
+			local lat2, lon2, height2 = convertSpheroid3DToLatLon((pt * wgs84.a):unpack())
 --if i == 0 then print('lat ' .. lat .. ' lat2 ' .. lat2) end
 			err_lon = err_lon + math.abs(lon-lon2) 
 			local this_err_lat = math.abs(lat-lat2)
@@ -227,15 +151,25 @@ print('com norm', comNorm)
 local com2 = com / comNorm 
 print('com = ', com)
 print('com2 = ', com2)
-local latLon = matrix{convertSpheroid3DToLatLon(com2:unpack())}
+local latLon = matrix{convertSpheroid3DToLatLon((com2 * wgs84.a):unpack())}
 print('com lat lon =', latLon) 
 --]=]
 
 for _,mask in ipairs(table.keys(comForMask)) do
 	comForMask[mask] = comForMask[mask] / areaForMask[mask]
 	print('mask', ('%x'):format(mask), 'com', comForMask[mask])
-	comLatLonHeightForMask[mask] = matrix{convertSpheroid3DToLatLon(comForMask[mask]:unpack())}
+	comLatLonHeightForMask[mask] = matrix{convertSpheroid3DToLatLon((comForMask[mask] * wgs84.a):unpack())}
 end
+
+print'resizing images...'
+local imgDownsized = img:resize(2048,1024):rgb()
+local continentImgDownsized = continentImg:resize(2048,1024):rgb():setChannels(4)
+for i=3,continentImgDownsized.width*continentImgDownsized.height*4,4 do
+	continentImgDownsized.buffer[i] = 127
+end
+print('resized img size', imgDownsized.width, imgDownsized.height)
+print'done'
+
 
 --[[
 from a perfect sphere:
@@ -253,8 +187,7 @@ com norm	1.2981214018785
 com = 	[0.6047097872861, 0.35902954396197, 0.7109316842868]
 com lon lat =	[30.698539186783, 45.310770365875]
 --]]
-
-
+	
 local gl = require 'gl'
 local ig = require 'imgui'
 local GLTex2D = require 'gl.tex2d'
@@ -266,31 +199,14 @@ function App:initGL(...)
 	App.super.initGL(self, ...)
 	gl.glEnable(gl.GL_DEPTH_TEST)
 
-	local img = img:resize(2048,1024):rgb()
-	print(img.width, img.height)
 	self.tex = GLTex2D{
-		-- [[
-		image = img,
-		--]]
-		--[[
-		width = img.width,
-		height = img.height,
-		data = img.buffer,
-		internalFormat = gl.GL_LUMINANCE,
-		format = gl.GL_LUMINANCE,
-		type = gl.GL_UNSIGNED_BYTE,
-		--]]	
+		image = imgDownsized,
 		minFilter = gl.GL_LINEAR,
 		magFilter = gl.GL_LINEAR,
 		generateMipmap = true,
 	}
-
-	local continentImg = continentImg:resize(2048,1024):rgb():setChannels(4)
-	for i=3,continentImg.width*continentImg.height*4,4 do
-		continentImg.buffer[i] = 127
-	end
 	self.continentTex = GLTex2D{
-		image = continentImg,
+		image = continentImgDownsized,
 		minFilter = gl.GL_LINEAR,
 		magFilter = gl.GL_LINEAR,
 		generateMipmap = true,
@@ -328,6 +244,7 @@ end
 -- globals for gui access
 idivs = 100
 jdivs = 100
+drawCOMs = true
 normalizeWeights = true
 spheroidCoeff = 0
 cylCoeff = 0
@@ -360,6 +277,9 @@ local function vertex(lat, lon, height)
 	gl.glTexCoord2d(unitLonFrac, aziFrac)
 
 	local spheroidx, spheroidy, spheroidz = convertLatLonToSpheroid3D(lat, lon, height)
+	spheroidx = spheroidx / wgs84.a
+	spheroidy = spheroidy / wgs84.a
+	spheroidz = spheroidz / wgs84.a
 	-- rotate back so y is up
 	spheroidy, spheroidz = spheroidz, -spheroidy
 	-- now rotate so prime meridian is along -z instead of +x
@@ -463,43 +383,47 @@ function App:update()
 	self.tex:unbind(0)
 	--self.tex:disable()
 	self.shader:useNone()
-	
--- [[
-	gl.glPointSize(3)
-	gl.glBegin(gl.GL_POINTS)
-	gl.glColor3f(1,0,0)
-	gl.glVertex3d(com:unpack())
-	gl.glEnd()
-	gl.glPointSize(1)
 
-	local function drawCOMLine(com)
-		local lat, lon, height = table.unpack(com)
-		local n = 10
-		for i=0,n do
-			local height = 2*i/n
-			vertex(lat, lon, height)
+	if drawCOMs then
+		local function drawCOMLine(com)
+			local lat, lon, height = table.unpack(com)
+			local n = 10
+			for i=0,n do
+				local height = 2*i/n
+				vertex(lat, lon, height)
+			end
+		end
+
+		local function drawCOMOutlinedLine(com, mask)
+			gl.glLineWidth(3)
+			gl.glDepthMask(gl.GL_FALSE)
+			gl.glColor3f(0,0,0)
+			gl.glBegin(gl.GL_LINES)
+			drawCOMLine(com)
+			gl.glEnd()
+			gl.glDepthMask(gl.GL_TRUE)
+
+			gl.glLineWidth(1)
+			gl.glBegin(gl.GL_LINES)
+			gl.glColor3f(
+				bit.band(mask, 0xff)/0xff, 
+				bit.band(bit.rshift(mask, 8), 0xff)/0xff, 
+				bit.band(bit.rshift(mask, 16), 0xff)/0xff) 
+			drawCOMLine(com)
+			gl.glEnd()
+		end
+
+		gl.glPointSize(3)
+		gl.glBegin(gl.GL_POINTS)
+		gl.glColor3f(1,0,0)
+		gl.glVertex3d(com:unpack())
+		gl.glEnd()
+		gl.glPointSize(1)
+
+		for mask,com in pairs(comLatLonHeightForMask) do
+			drawCOMOutlinedLine(com, mask)
 		end
 	end
-
-	for mask,com in pairs(comLatLonHeightForMask) do
-		gl.glLineWidth(3)
-		gl.glDepthMask(gl.GL_FALSE)
-		gl.glColor3f(0,0,0)
-		gl.glBegin(gl.GL_LINES)
-		drawCOMLine(com)
-		gl.glEnd()
-		gl.glDepthMask(gl.GL_TRUE)
-
-		gl.glLineWidth(1)
-		gl.glBegin(gl.GL_LINES)
-		gl.glColor3f(
-			bit.band(mask, 0xff)/0xff, 
-			bit.band(bit.rshift(mask, 8), 0xff)/0xff, 
-			bit.band(bit.rshift(mask, 16), 0xff)/0xff) 
-		drawCOMLine(com)
-		gl.glEnd()
-	end
---]]
 
 	App.super.update(self)
 end
@@ -516,6 +440,7 @@ local weightFields = {
 function App:updateGUI()
 	ig.luatableInputInt('idivs', _G, 'idivs')
 	ig.luatableInputInt('jdivs', _G, 'jdivs')
+	ig.luatableCheckbox('draw coms', _G, 'drawCOMs')
 	ig.luatableCheckbox('normalize weights', _G, 'normalizeWeights')
 	local changed
 	for _,field in ipairs(weightFields) do
