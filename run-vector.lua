@@ -27,10 +27,10 @@ end
 local layers = {
 	--{name='boundaries', data=boundaries},
 	--{name='orogens', data=orogens},
-	--{name='plates', data=assert(json.decode(file'tectonicplates/GeoJSON/PB2002_plates.json':read()))},
+	{name='plates', data=assert(json.decode(file'tectonicplates/GeoJSON/PB2002_plates.json':read()))},
 	--{name='steps', data=steps},
 	--{name='coastline', data=assert(json.decode(file'naturalearthdata/ne_10m_coastline.geojson':read()))},
-	{name='land', data=assert(json.decode(file'naturalearthdata/ne_10m_land.geojson':read()))},
+	--{name='land', data=assert(json.decode(file'naturalearthdata/ne_10m_land.geojson':read()))},
 }
 
 local equatorialRadius = 1
@@ -241,6 +241,7 @@ end
 _G.drawOnSphere = false
 _G.drawCOMs = false
 _G.drawSolid = false
+_G.useGLUForPoly = false
 
 local function vertex(coord)
 	if drawOnSphere then
@@ -263,60 +264,72 @@ local function drawPoly(poly)
 	gl.glColor3f(table.unpack(poly.color))						
 
 	if drawSolid then
-		-- glu tess stuff here
-		if not tessID then	
-			tessID = gl.glGenLists(1)
-			assert(tessID ~= 0)
-			
-			tess = glu.gluNewTess()
-			assert(tess ~= nil)
+		if useGLUForPoly then
+			-- glu tess stuff here
+			if not poly.callID then	
+				poly.callID = gl.glGenLists(1)
+				assert(poly.callID ~= 0)
+				tess = glu.gluNewTess()
+				assert(tess ~= nil)
 
-			glu.gluTessCallback(tess, glu.GLU_TESS_BEGIN, ffi.cast('GLvoid(*)()', gl.glBegin))
-			glu.gluTessCallback(tess, glu.GLU_TESS_END, gl.glEnd)
-			glu.gluTessCallback(tess, glu.GLU_TESS_ERROR, ffi.cast('GLvoid(*)()', function(code) error(ffi.string(glu.gluErrorString(code))) end))
-			glu.gluTessCallback(tess, glu.GLU_TESS_VERTEX, ffi.cast('GLvoid(*)()', gl.glVertex3dv))
-	
-			-- [[ crashes ... but won't draw without this ...
-			-- why does tesselation/src/main.cpp write out data when it never uses it?
-			local vertices = table()
-    		glu.gluTessCallback(tess, glu.GLU_TESS_COMBINE, function(newVertex, neighborVertex, neighborWeight, outData)
-				local vertex = ffi.new('double[3]')
-				--ffi.copy(vertex, newVertex, ffi.sizeof'double[3]')
-				vertex[0] = newVertex[0]
-				vertex[1] = newVertex[1]
-				vertex[2] = newVertex[2]
-				outData[0] = vertex
-				vertices:insert(vertex)
-			end)
-			--]]
+				glu.gluTessCallback(tess, glu.GLU_TESS_BEGIN, ffi.cast('GLvoid(*)()', gl.glBegin))
+				glu.gluTessCallback(tess, glu.GLU_TESS_END, gl.glEnd)
+				glu.gluTessCallback(tess, glu.GLU_TESS_ERROR, ffi.cast('GLvoid(*)()', function(code) error(ffi.string(glu.gluErrorString(code))) end))
+				glu.gluTessCallback(tess, glu.GLU_TESS_VERTEX, ffi.cast('GLvoid(*)()', gl.glVertex3dv))
+		
+				-- [[ crashes ... but won't draw without this ...
+				-- why does tesselation/src/main.cpp write out data when it never uses it?
+				local vertices = table()
+				glu.gluTessCallback(tess, glu.GLU_TESS_COMBINE, function(newVertex, neighborVertex, neighborWeight, outData)
+					local vertex = ffi.new('double[3]')
+					--ffi.copy(vertex, newVertex, ffi.sizeof'double[3]')
+					vertex[0] = newVertex[0]
+					vertex[1] = newVertex[1]
+					vertex[2] = newVertex[2]
+					outData[0] = vertex
+					vertices:insert(vertex)
+				end)
+				--]]
 
-			gl.glNewList(tessID, gl.GL_COMPILE)
-			gl.glColor3f(1,1,1)
-			glu.gluTessBeginPolygon(tess, nil)
-			glu.gluTessBeginContour(tess)
-			
-			for _,coord in ipairs(poly) do
-				local xyz = ffi.new('GLdouble[3]')
-				if drawOnSphere then
-					local x,y,z = convertLatLonToSpheroid3D(table.unpack(coord))
-					xyz[0] = x
-					xyz[1] = y
-					xyz[2] = z
-				else
-					xyz[0] = coord[1]
-					xyz[1] = coord[2]
-					xyz[2] = 0
+				gl.glNewList(poly.callID, gl.GL_COMPILE)
+				gl.glColor3f(1,1,1)
+				glu.gluTessBeginPolygon(tess, nil)
+				glu.gluTessBeginContour(tess)
+				
+				for _,coord in ipairs(poly) do
+					local xyz = ffi.new('GLdouble[3]')
+					if drawOnSphere then
+						local x,y,z = convertLatLonToSpheroid3D(table.unpack(coord))
+						xyz[0] = x
+						xyz[1] = y
+						xyz[2] = z
+					else
+						xyz[0] = coord[1]
+						xyz[1] = coord[2]
+						xyz[2] = 0
+					end
+					glu.gluTessVertex(tess, xyz, xyz)
 				end
-				glu.gluTessVertex(tess, xyz, xyz)
+				gl.glEndList()
+
+				glu.gluTessEndContour(tess)
+				glu.gluTessEndPolygon(tess)
+				glu.gluDeleteTess(tess)
+			else
+				gl.glCallList(poly.callID)
 			end
-
-			glu.gluTessEndContour(tess)
-			glu.gluTessEndPolygon(tess)
-			gl.glEndList()
-
-    		glu.gluDeleteTess(tess)
 		else
-			gl.glCallList(tessID)
+			-- hmm not working... hitting a vertex limit?
+			gl.glBegin(gl.GL_POLYGON)
+			--gl.glBegin(gl.GL_TRIANGLE_FAN)
+			for _,coord in ipairs(poly) do
+				if drawOnSphere then
+					gl.glVertex3d(convertLatLonToSpheroid3D(table.unpack(coord)))
+				else
+					gl.glVertex3d(coord[1], coord[2], 0)
+				end
+			end
+			gl.glEnd()
 		end
 	else
 		gl.glBegin(gl.GL_LINE_LOOP)
