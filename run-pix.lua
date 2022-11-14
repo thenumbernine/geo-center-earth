@@ -1,5 +1,6 @@
 #!/usr/bin/env luajit
 require 'ext'
+local matrix = require 'matrix'
 
 local charts = require 'geographic-charts'
 local wgs84 = charts.WGS84
@@ -8,25 +9,89 @@ local wgs84 = charts.WGS84
 local Image = require 'image'
 local img = Image'visibleearth/gebco_08_rev_bath_21600x10800.png'
 assert(img)
-local w, h, ch = img:size()
-assert(ch == 1)
-print('width', w, 'height', h)
+assert(img.channels == 1)
+print('width', img.width, 'height', img.height)
 --]]
---[[
-local w, h = 200, 100
---]]
-	
-local continentImg = Image'continent-mask.png'
+
+-- [[ build continentImg from me winging it
+local continentImg = Image'continent-mask-3.png'
 print('continent width', continentImg.width, 'height', continentImg.height, 'channels', continentImg.channels)
 assert(continentImg.channels >= 3)
-assert(continentImg.width == img.width)
-assert(continentImg.height == img.height)
+--assert(continentImg.width == img.width)
+--assert(continentImg.height == img.height)
+--continentImg = continentImg:resize(img.width, img.height)
+img = img:resize(continentImg.width, continentImg.height)
+--]]
+--[[ build continentImg from tectonicplates plates data
+-- the polygons are too complicated for gl so i have to software render them
+local json = require 'dkjson'
+local polys = table()
+local layers = {
+	{name='plates', data=assert(json.decode(file'tectonicplates/GeoJSON/PB2002_plates.json':read()))},
+}
+for _,layer in ipairs(layers) do
+	for _,feature in ipairs(layer.data.features) do
+		if feature.geometry.type == 'LineString' then
+		elseif feature.geometry.type == 'Polygon' then
+			for _,poly in ipairs(feature.geometry.coordinates) do
+				polys:insert(poly)
+			end
+		elseif feature.geometry.type == 'MultiPolygon' then
+			for _,group in ipairs(feature.geometry.coordinates) do
+				for _,poly in ipairs(group) do
+					polys:insert(poly)
+				end		
+			end		
+		else
+			error('here')
+		end
+	end
+end
+for _,poly in ipairs(polys) do
+	poly.color = matrix{math.random(), math.random(), math.random()}
+	poly.color = poly.color / poly.color:norm()
+end
+--local cw, ch = 2048, 1024
+local cw, ch = 200, 100
+local continentImg = Image(cw, ch, 3, 'unsigned char', function(i,j)
+print(i,j)
+	local x = i/cw*360-180
+	local y = j/ch*180-90
+	local totaltheta = 0
+	for _,p in ipairs(polys) do
+		local n = #p
+		local theta = 0
+		for i=1,n do
+			local coord = p[i]
+			local i2 = (i%n)+1
+			local x1 = coord[1]
+			local y1 = coord[2]
+			local coord2 = p[i2]
+			local x2 = coord2[1]
+			local y2 = coord2[2]
+			local dx1 = x1 - x
+			local dy1 = y1 - y
+			local dx2 = x2 - x
+			local dy2 = y2 - y
+			local sindtheta = (dx1 * dy2 - dx2 * dy1) / math.sqrt(
+				(dx1 * dx1 + dy1 * dy1)
+				* (dx2 * dx2 + dy2 * dy2)
+			)
+			local dtheta = math.asin(math.clamp(sindtheta,-1,1))
+			theta = theta + dtheta
+		end
+		-- if theta is approx 0 then we're outside the poly
+		-- if it's some integer of 2 pi then we're inside the poly
+		totaltheta = totaltheta + theta
+	end
+	return totaltheta / (2 * math.pi) / 3 + 1.5, 0, 0
+end)
+--]]
 
 local comForMask = {}
 local comLatLonHeightForMask = {}
 local areaForMask = {}
 
-local matrix = require 'matrix'
 local com = matrix{0,0,0}
 local mass = 0
 
@@ -37,12 +102,9 @@ print('lat lon height of com',wgs84:chartInv(com:unpack()))
 --os.exit()
 --]]
 
--- TODO use these too
--- {name='plates', data=assert(json.decode(file'tectonicplates/GeoJSON/PB2002_plates.json':read()))},
-
 -- [=[
 local lastTime = os.time()
-local imgsize = w * h
+local imgsize = img.width * img.height
 
 local err_lon = 0
 local err_lat = 0
@@ -53,19 +115,19 @@ local landArea = 0
 local totalArea = 0
 local e = 0
 local hist = range(0,255):map(function(i) return 0, i end)
-local step = 600
+local step = 8
 local max_err_lat  = 0
-for j=0,h-1,step do
-	local lat = (.5 - (j+.5)/h) * 180
-	--local dA = math.abs(wgs84:dx_dsphere_det_h_eq_0(lat)) * (2 * math.pi) / w * math.pi / h
-	local dtheta = (math.pi * step) / h
-	local dphi = (2 * math.pi * step) / w
-	local sintheta = math.sin((j+.5) / h * math.pi)
+for j=0,img.height-1,step do
+	local lat = (.5 - (j+.5)/img.height) * 180
+	--local dA = math.abs(wgs84:dx_dsphere_det_h_eq_0(lat)) * (2 * math.pi) / img.width * math.pi / img.height
+	local dtheta = (math.pi * step) / img.height
+	local dphi = (2 * math.pi * step) / img.width
+	local sintheta = math.sin((j+.5) / img.height * math.pi)
 	local dA = sintheta * dphi * dtheta 
 	--assert(math.isfinite(dA))
-	for i=0,w-1,step do
-		e = i + w * j
-		local lon = ((i+.5)/w - .5) * 360
+	for i=0,img.width-1,step do
+		e = i + img.width * j
+		local lon = ((i+.5)/img.width - .5) * 360
 		local v = img and img.buffer[e] 
 	
 		if img == nil or v >= 255 then

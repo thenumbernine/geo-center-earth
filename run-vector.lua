@@ -194,6 +194,7 @@ for _,layer in ipairs(layers) do
 	local com
 	local mass = 0
 	for _,feature in ipairs(layer.data.features) do
+print(feature.geometry.type)		
 		local fcom
 		local fmass = 0
 		if feature.geometry.type == 'LineString' then
