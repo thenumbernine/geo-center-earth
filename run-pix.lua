@@ -7,20 +7,21 @@ local wgs84 = charts.WGS84
 
 -- [[
 local Image = require 'image'
-local img = Image'visibleearth/gebco_08_rev_bath_21600x10800.png'
-assert(img)
-assert(img.channels == 1)
-print('width', img.width, 'height', img.height)
+--local bathImg = Image'visibleearth/gebco_08_rev_bath_21600x10800.png'
+local bathImg = Image'gebco_08_rev_bath_3600x1800_color.jpg'
+assert(bathImg)
+--assert(bathImg.channels == 1)
+print('width', bathImg.width, 'height', bathImg.height)
 --]]
 
 -- [[ build continentImg from me winging it
 local continentImg = Image'continent-mask-3.png'
 print('continent width', continentImg.width, 'height', continentImg.height, 'channels', continentImg.channels)
 assert(continentImg.channels >= 3)
---assert(continentImg.width == img.width)
---assert(continentImg.height == img.height)
---continentImg = continentImg:resize(img.width, img.height)
-img = img:resize(continentImg.width, continentImg.height)
+--assert(continentImg.width == bathImg.width)
+--assert(continentImg.height == bathImg.height)
+--continentImg = continentImg:resize(bathImg.width, bathImg.height)
+bathImg = bathImg:resize(continentImg.width, continentImg.height)
 --]]
 --[[ build continentImg from tectonicplates plates data
 -- the polygons are too complicated for gl so i have to software render them
@@ -92,6 +93,8 @@ local comForMask = {}
 local comLatLonHeightForMask = {}
 local areaForMask = {}
 
+local continentsOnly = true
+
 local com = matrix{0,0,0}
 local mass = 0
 
@@ -104,7 +107,7 @@ print('lat lon height of com',wgs84:chartInv(com:unpack()))
 
 -- [=[
 local lastTime = os.time()
-local imgsize = img.width * img.height
+local numpixels = bathImg.width * bathImg.height
 
 local err_lon = 0
 local err_lat = 0
@@ -116,21 +119,27 @@ local totalArea = 0
 local e = 0
 local hist = range(0,255):map(function(i) return 0, i end)
 local step = 8
-local max_err_lat  = 0
-for j=0,img.height-1,step do
-	local lat = (.5 - (j+.5)/img.height) * 180
-	--local dA = math.abs(wgs84:dx_dsphere_det_h_eq_0(lat)) * (2 * math.pi) / img.width * math.pi / img.height
-	local dtheta = (math.pi * step) / img.height
-	local dphi = (2 * math.pi * step) / img.width
-	local sintheta = math.sin((j+.5) / img.height * math.pi)
+local max_err_lat = 0
+for j=0,bathImg.height-1,step do
+	local lat = (.5 - (j+.5)/bathImg.height) * 180
+	--local dA = math.abs(wgs84:dx_dsphere_det_h_eq_0(lat)) * (2 * math.pi) / bathImg.width * math.pi / bathImg.height
+	local dtheta = (math.pi * step) / bathImg.height
+	local dphi = (2 * math.pi * step) / bathImg.width
+	local sintheta = math.sin((j+.5) / bathImg.height * math.pi)
 	local dA = sintheta * dphi * dtheta 
 	--assert(math.isfinite(dA))
-	for i=0,img.width-1,step do
-		e = i + img.width * j
-		local lon = ((i+.5)/img.width - .5) * 360
-		local v = img and img.buffer[e] 
+	for i=0,bathImg.width-1,step do
+		e = i + bathImg.width * j
+		local lon = ((i+.5)/bathImg.width - .5) * 360
+		local bathr = bathImg and bathImg.buffer[0 + 3 * e] 
+		local bathg = bathImg and bathImg.buffer[1 + 3 * e] 
+		local bathb = bathImg and bathImg.buffer[2 + 3 * e] 
 	
-		if img == nil or v >= 255 then
+		--if bathImg == nil or bathr >= 255 then
+		if not continentsOnly
+		or bathImg == nil 
+		or (bathr == 0 and bathg == 0 and bathb == 0) 
+		then
 			-- consider this coordinate for land sum
 
 			local height = 0
@@ -172,7 +181,7 @@ for j=0,img.height-1,step do
 	local thisTime = os.time()
 	if thisTime ~= lastTime then
 		lastTime = thisTime
-		print((100*e/imgsize)..'% complete')
+		print((100*e/numpixels)..'% complete')
 		print('com', com)
 		print('landArea', landArea)
 	end
@@ -187,28 +196,28 @@ print('totalArea / 4pi', totalArea / (4 * math.pi))
 print('ravg', ravg / landArea)
 print('% of earth covered by land =', (landArea / totalArea) * 100)
 print('% of earth covered by water =', (1 - landArea / totalArea) * 100)
-local comNorm = com:norm()
-print('com norm', comNorm)
-local com2 = com / comNorm 
+local comLen = com:norm()
+print('com norm', comLen)
+local comUnit = com / comLen 
 print('com = ', com)
-print('com2 = ', com2)
-local latLon = matrix{wgs84:chartInv((com2 * wgs84.a):unpack())}
-print('com lat lon =', latLon) 
+print('comUnit = ', comUnit)
+local comLatLon = matrix{wgs84:chartInv((comUnit * wgs84.a):unpack())}
+print('com lat lon =', comLatLon) 
 --]=]
 
 for _,mask in ipairs(table.keys(comForMask)) do
 	comForMask[mask] = comForMask[mask] / areaForMask[mask]
-	print('mask', ('%x'):format(mask), 'com', comForMask[mask])
 	comLatLonHeightForMask[mask] = matrix{wgs84:chartInv((comForMask[mask] * wgs84.a):unpack())}
+	print('mask', ('%x'):format(mask), 'com', comForMask[mask], 'com lat lon', comLatLonHeightForMask[mask])
 end
 
 print'resizing images...'
-local imgDownsized = img:resize(2048,1024):rgb()
+local bathImgDownsized = bathImg:resize(2048,1024):rgb()
 local continentImgDownsized = continentImg:resize(2048,1024):rgb():setChannels(4)
 for i=3,continentImgDownsized.width*continentImgDownsized.height*4,4 do
 	continentImgDownsized.buffer[i] = 127
 end
-print('resized img size', imgDownsized.width, imgDownsized.height)
+print('resized bathImg size', bathImgDownsized.width, bathImgDownsized.height)
 print'done'
 
 
@@ -240,8 +249,14 @@ function App:initGL(...)
 	App.super.initGL(self, ...)
 	gl.glEnable(gl.GL_DEPTH_TEST)
 
-	self.tex = GLTex2D{
-		image = imgDownsized,
+	self.bathTex = GLTex2D{
+		image = bathImgDownsized,
+		minFilter = gl.GL_LINEAR,
+		magFilter = gl.GL_LINEAR,
+		generateMipmap = true,
+	}
+	self.colorTex = GLTex2D{
+		filename = 'earth-color.png',
 		minFilter = gl.GL_LINEAR,
 		magFilter = gl.GL_LINEAR,
 		generateMipmap = true,
@@ -264,20 +279,26 @@ void main() {
 }
 ]],
 		fragmentCode = [[
-uniform sampler2D tex;
-uniform sampler2D continents;
+uniform sampler2D bathTex;
+uniform sampler2D colorTex;
+uniform sampler2D continentTex;
+uniform float gamma;
+uniform float alpha1;
+uniform float alpha2;
 varying vec3 color;
 varying vec2 tc;
 void main() {
-	gl_FragColor = mix(
-		texture2D(tex, tc),
-		texture2D(continents, tc),
-		.5);
+	//gl_FragColor = pow(texture2D(bathTex, tc), vec4(gamma));
+	gl_FragColor = step(vec4(gamma), texture2D(bathTex, tc));
+	
+	gl_FragColor = mix(gl_FragColor, texture2D(continentTex, tc), alpha1);
+	gl_FragColor = mix(gl_FragColor, texture2D(colorTex, tc), alpha2);
 }
 ]],
 		uniforms = {
-			tex = 0,
-			continents = 1,
+			bathTex = 0,
+			continentTex = 1,
+			colorTex = 2,
 		},
 	}
 end
@@ -292,6 +313,9 @@ cylCoeff = 0
 equirectCoeff = 0
 aziequiCoeff = 0
 mollweideCoeff = 0
+alpha1 = .5
+alpha2 = .5
+gamma = 1
 
 -- TODO change this to (lat, lon, height)
 -- bleh conventions:
@@ -341,9 +365,13 @@ function App:update()
 	gl.glClearColor(0, 0, 0, 1)
 	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
 	self.shader:use()
-	--self.tex:enable()
-	self.tex:bind(0)
+	gl.glUniform1f(self.shader.uniforms.alpha1.loc, alpha1)
+	gl.glUniform1f(self.shader.uniforms.alpha2.loc, alpha2)
+	gl.glUniform1f(self.shader.uniforms.gamma.loc, gamma)
+	--self.bathTex:enable()
+	self.bathTex:bind(0)
 	self.continentTex:bind(1)
+	self.colorTex:bind(2)
 	gl.glColor3f(1,1,1)
 	for j=0,jdivs-1 do
 		gl.glColor3f(1,1,1)
@@ -368,9 +396,10 @@ function App:update()
 		end
 		gl.glEnd()
 	end
+	self.colorTex:unbind(2)
 	self.continentTex:unbind(1)
-	self.tex:unbind(0)
-	--self.tex:disable()
+	self.bathTex:unbind(0)
+	--self.bathTex:disable()
 	self.shader:useNone()
 
 	if drawCOMs then
@@ -402,13 +431,7 @@ function App:update()
 			gl.glEnd()
 		end
 
-		gl.glPointSize(3)
-		gl.glBegin(gl.GL_POINTS)
-		gl.glColor3f(1,0,0)
-		gl.glVertex3d(com:unpack())
-		gl.glEnd()
-		gl.glPointSize(1)
-
+		drawCOMOutlinedLine(comLatLon, 0xff)
 		for mask,com in pairs(comLatLonHeightForMask) do
 			drawCOMOutlinedLine(com, mask)
 		end
@@ -431,6 +454,9 @@ function App:updateGUI()
 	ig.luatableInputInt('jdivs', _G, 'jdivs')
 	ig.luatableCheckbox('draw coms', _G, 'drawCOMs')
 	ig.luatableCheckbox('normalize weights', _G, 'normalizeWeights')
+	ig.luatableInputFloat('alpha1', _G, 'alpha1')
+	ig.luatableInputFloat('alpha2', _G, 'alpha2')
+	ig.luatableInputFloat('gamma', _G, 'gamma')
 	local changed
 	for _,field in ipairs(weightFields) do
 		if ig.luatableSliderFloat(field, _G, field, 0, 1) then
