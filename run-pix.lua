@@ -211,6 +211,23 @@ for _,mask in ipairs(table.keys(comForMask)) do
 	print('mask', ('%x'):format(mask), 'com', comForMask[mask], 'com lat lon', comLatLonHeightForMask[mask])
 end
 
+--[[
+comparing this to the guy who said Giza was at the center of mass of all land on earth:
+full earth 		com lat lon =	[43.742450656403, 28.632616395901]		<- next to Black Sea.  Alleged (by ... cite) COM of all land area is supposed to be at Giza, Egypt
+
+comparing these to the Alan Moen crescents next to blonde tribes which he points out are close to the center of mass of each continent. 
+mask	7f8dac	com lat lon	[56.007823753727, -103.07996581373]			<- North America, in Manitoba? ... vs. crescent is Turtle Mountain Park at 49.049164,-100.0632356
+mask	b082ad	com lat lon	[-13.754153820306, -60.126821755646]		<- South America ... vs. crescent nearby is Parque Estadual do Guira?
+mask	72a17f	com lat lon	[47.162438928774, 78.535697981186]			<- Eurasia, in Kazakhstan ... vs. Urumqi China / Bogeda Peak at 43.8016657,88.3237452
+mask	7a9afb	com lat lon	[6.3722142780304, 18.526880794863]			<- Africa, C.A.R ... vs Bongo Massif at 7.6029787,21.2410182
+mask	82b4fc	com lat lon	[-24.991315573585, 134.96457257506]			<- Australia, near Alice Springs ... vs Mount Olga, Australia at -25.3002455,130.7330146
+mask	aae6fe	com lat lon	[-6.201910350677, 147.3285295677]			<- Pacific Plate, on P.N.G. 
+mask	be9d8a	com lat lon	[-85.850024779859, 80.117014944601]			<- Antarctica
+
+
+--]]
+
+
 print'resizing images...'
 local bathImgDownsized = bathImg:resize(2048,1024):rgb()
 local continentImgDownsized = continentImg:resize(2048,1024):rgb():setChannels(4)
