@@ -369,9 +369,9 @@ local function vertex(lat, lon, height)
 	-- now rotate so prime meridian is along -z instead of +x
 	cylx, cylz = -cylz, cylx
 
-	local equirectx, equirecty, equirectz = charts.equirectangular:chart(lat, lon, height)
-	local aziequix, aziequiy, aziequiz = charts.azimuthalEquidistant:chart(lat, lon, height)
-	local mollweidex, mollweidey, mollweidez = charts.mollweide:chart(lat, lon, height)
+	local equirectx, equirecty, equirectz = charts.Equirectangular:chart(lat, lon, height)
+	local aziequix, aziequiy, aziequiz = charts['Azimuthal equidistant']:chart(lat, lon, height)
+	local mollweidex, mollweidey, mollweidez = charts.Mollweide:chart(lat, lon, height)
 
 	local x = spheroidCoeff * spheroidx + cylCoeff * cylx + equirectCoeff * equirectx + aziequiCoeff * aziequix + mollweideCoeff * mollweidex
 	local y = spheroidCoeff * spheroidy + cylCoeff * cyly + equirectCoeff * equirecty + aziequiCoeff * aziequiy + mollweideCoeff * mollweidey

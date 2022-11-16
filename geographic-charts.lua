@@ -15,6 +15,7 @@ so TODO change the calc_* stuff from r_θφ to h_φλ? idk ...
 --]]
 		
 -- using geographic labels: lat = φ, lon = λ
+local vec3f = require 'vec-ffi.vec3f'
 local symmath = require 'symmath'
 -- input 
 local latvar = symmath.var'lat'
@@ -31,11 +32,20 @@ local charts = {
 		c.name = 'WGS84'
 		
 		-- specific to WGS84:
-		c.inverseFlattening = 298.257223563
-		c.eccentricitySquared = (2 * c.inverseFlattening - 1) / (c.inverseFlattening * c.inverseFlattening)
-		
 		c.a = 6378137	-- m ... earth equitorial radius
 		c.b = 6356752.3142	-- m ... earth polar radius
+		-- symmath vars equivalent
+		local avar = symmath.var'a'
+		local bvar = symmath.var'b'
+		local flatteningVal = 1 - bvar / avar
+		local inverseFlatteningVal = 1 / flatteningVal
+		local eccentricitySquaredVal = (2 * inverseFlatteningVal - 1) / (inverseFlatteningVal * inverseFlatteningVal)
+		local e = math.sqrt(1 - c.b * c.b / (c.a * c.a))
+		c.esq = e * e
+		
+		local flattening = 1 - c.b / c.a
+		c.inverseFlattening = 298.257223563
+		c.eccentricitySquared = (2 * c.inverseFlattening - 1) / (c.inverseFlattening * c.inverseFlattening)
 		
 		function c:calc_N(sinTheta, equatorialRadius, eccentricitySquared)
 			local denom = math.sqrt(1 - eccentricitySquared * sinTheta * sinTheta)
@@ -116,7 +126,73 @@ local charts = {
 				(math.deg(phi) + 180) % 360 - 180, 
 				height
 		end
-	
+
+		function c:basis(lat, lon, height)
+			--return latLonToCartesianTangentSpaceWGS84(lat, lon, height)
+			local phi = math.rad(lat)
+			local lambda = math.rad(lon)
+			local cosLambda = math.cos(lambda)
+			local sinLambda = math.sin(lambda)
+
+			local cosPhi = math.cos(phi)
+			local sinPhi = math.sin(phi)
+			local dphi_cosPhi = -sinPhi
+			local dphi_sinPhi = cosPhi
+
+			local rCart = self.a / math.sqrt(1 - self.esq * sinPhi * sinPhi)
+			local dphi_rCart = self.a / math.sqrt(1 - self.esq * sinPhi * sinPhi)^3 * self.esq * sinPhi * dphi_sinPhi
+
+			local rCart_over_a = 1 / math.sqrt(1 - self.esq * sinPhi * sinPhi)
+
+			local xp = (rCart + height) * cosPhi
+			local dphi_xp = dphi_rCart * cosPhi + (rCart + height) * dphi_cosPhi
+			local dheight_xp = cosPhi
+			
+			local xp_over_a = (rCart_over_a + height / self.a) * cosPhi
+
+			local zp = (rCart * (1 - self.esq) + height) * sinPhi
+			local dphi_zp = (dphi_rCart * (1 - self.esq)) * sinPhi + (rCart * (1 - self.esq) + height) * dphi_sinPhi
+			local dheight_zp = sinPhi
+
+			local zp_over_a = (rCart_over_a * (1 - self.esq) + height / self.a) * sinPhi
+
+			local r2D = math.sqrt(xp * xp + zp * zp)
+			local dphi_r2D = (xp * dphi_xp + zp * dphi_zp) / r2D
+			local dheight_r2D = (xp * dheight_xp + zp * dheight_zp) / r2D
+			
+			local r2D_over_a = math.sqrt(xp_over_a * xp_over_a + zp_over_a * zp_over_a)
+			local dphi_r2D_over_a = (xp_over_a * dphi_xp + zp_over_a * dphi_zp) / r2D
+
+			local sinPhiSph = zp / r2D
+			local dphi_sinPhiSph = (dphi_zp * r2D - zp * dphi_r2D) / (r2D * r2D)
+			local dheight_sinPhiSph = (dheight_zp * r2D - zp * dheight_r2D) / (r2D * r2D)
+
+			local cosPhiSph = math.sqrt(1 - sinPhiSph * sinPhiSph)
+			--d/du sqrt(1 - x^2) = -x/sqrt(1 - x^2) dx/du
+			local dphi_cosPhiSph = -sinPhi / cosPhiSph * dphi_sinPhiSph
+			local dheight_cosPhiSph = -sinPhi / cosPhiSph * dheight_sinPhiSph
+
+			--local x = r2D * cosPhiSph / self.a * cosLambda
+			--local y = r2D * cosPhiSph / self.a * sinLambda
+			--local z = r2D * sinPhiSph / self.a
+			
+			local dphi_x = (dphi_r2D_over_a * cosPhiSph + r2D_over_a * dphi_cosPhiSph) * cosLambda
+			local dphi_y = (dphi_r2D_over_a * cosPhiSph + r2D_over_a * dphi_cosPhiSph) * sinLambda
+			local dphi_z = (dphi_r2D_over_a * sinPhiSph + r2D_over_a * dphi_sinPhiSph)
+			
+			local dlambda_x = -sinLambda
+			local dlambda_y = cosLambda
+			
+			local dheight_x = (dheight_r2D * cosPhiSph + r2D * dheight_cosPhiSph) * cosLambda
+			local dheight_y = (dheight_r2D * cosPhiSph + r2D * dheight_cosPhiSph) * sinLambda
+			local dheight_z = (dheight_r2D * sinPhiSph + r2D * dheight_sinPhiSph)
+
+			return
+				vec3f(dphi_x, dphi_y, dphi_z),
+				vec3f(dlambda_x, dlambda_y, 0),
+				vec3f(-dheight_x, -dheight_y, -dheight_z)	
+		end
+		
 		return c
 	end)(),
 	
@@ -146,11 +222,14 @@ local charts = {
 	end)(),
 
 	(function()
+		local c = {}
+		c.name = 'Equirectangular'
+		
 		-- gui vars
-		local R = 2 / math.pi
-		local lambda0 = 0
-		local phi0 = 0
-		local phi1 = 0
+		c.R = 2 / math.pi
+		c.lambda0 = 0
+		c.phi0 = 0
+		c.phi1 = 0
 		-- symmath vars equivalent
 		local Rvar = symmath.var'R'
 		local lambda0var = symmath.var'lambda0'
@@ -172,11 +251,26 @@ local charts = {
 			output = {xval, yval, zval},
 		}
 
-		local c = {}
-		c.name = 'equirectangular'
 		function c:chart(lat, lon, height)
-			return f(lat, lon, height, R, lambda0, phi0, phi1)
+			return f(lat, lon, height, 
+				self.R, self.lambda0, self.phi0, self.phi1)
 		end
+		
+		function c:updateGUI()
+			ig.luatableInputFloat('R', self, 'R')
+			ig.luatableInputFloat('lambda0', self, 'lambda0')
+			ig.luatableInputFloat('phi0', self, 'phi0')
+			ig.luatableInputFloat('phi1', self, 'phi1')
+		end
+
+		function c:basis(lat, lon, height)
+			-- Bx is north, By is east, Bz is down ... smh
+			return
+				vec3f(0, 1, 0),
+				vec3f(1, 0, 0),
+				vec3f(0, 0, -1)
+		end
+
 		return c
 	end)(),
 
@@ -198,21 +292,39 @@ local charts = {
 		}
 
 		local c = {}
-		c.name = 'azimuthalEquidistant'
+		c.name = 'Azimuthal equidistant'
+		
 		function c:chart(lat, lon, height)
 			return f(lat, lon, height)
 		end
+	
+		function c:basis(lat, lon, height)
+			local cosLambda = math.cos(math.rad(lon))
+			local sinLambda = math.sin(math.rad(lon))
+			return
+				vec3f(-cosLambda, -sinLambda, 0),	-- d/dphi
+				vec3f(-sinLambda, cosLambda, 0),	-- d/dlambda
+				vec3f(0, 0, -1)						-- d/dheight
+		end
+
 		return c
 	end)(),
 
 	(function()
 		local c = {}
-		c.name = 'mollweide'
+		
+		c.name = 'Mollweide'
+	
+		c.R = math.pi / 4
+		c.lambda0 = 0	-- in degrees
+		function c:updateGUI()
+			ig.luatableInputFloat('R', self, 'R')
+			ig.luatableInputFloat('lambda0', self, 'lambda0')
+		end
+		
 		function c:chart(lat, lon, height)
 			local lonrad = math.rad(lon)
-			local R = math.pi / 4
 			local lambda = lonrad
-			local lambda0 = 0	-- in degrees
 			local latrad = math.rad(lat)
 			local phi = latrad
 			local theta
@@ -226,14 +338,22 @@ local charts = {
 					theta = theta - dtheta
 				end
 			end
-			mollweidex = R * math.sqrt(8) / math.pi * (lambda - lambda0) * math.cos(theta)
-			mollweidey = R * math.sqrt(2) * math.sin(theta)
+			mollweidex = self.R * math.sqrt(8) / math.pi * (lambda - self.lambda0) * math.cos(theta)
+			mollweidey = self.R * math.sqrt(2) * math.sin(theta)
 			mollweidez = height
 			if not math.isfinite(mollweidex) then mollweidex = 0 end
 			if not math.isfinite(mollweidey) then mollweidey = 0 end
 			if not math.isfinite(mollweidez) then mollweidez = 0 end
 			return mollweidex, mollweidey, mollweidez
 		end
+		
+		function c:basis(lat, lon, height)
+			return
+				vec3f(0, 1, 0),
+				vec3f(1, 0, 0),
+				vec3f(0, 0, -1)
+		end
+		
 		return c
 	end)(),
 }
