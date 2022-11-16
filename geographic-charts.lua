@@ -10,9 +10,20 @@ GAAAHHH STANDARDS
 physics spherical coordinates: the longitude is φ and the latitude (starting at the north pole and going down) is θ ...
 mathematician spherical coordinates: the longitude is θ and the latitude is φ ...
 geographic / map charts: the longitude is λ and the latitude is φ ...
-so TODO change the calc_* stuff from r_theta_phi to h_phi_lambda ? idk ...
+so TODO change the calc_* stuff from r_θφ to h_φλ? idk ...
 
 --]]
+		
+-- using geographic labels: lat = φ, lon = λ
+local symmath = require 'symmath'
+-- input 
+local latvar = symmath.var'lat'
+local lonvar = symmath.var'lon'
+local heightvar = symmath.var'height'
+-- expressions
+local latradval = latvar * symmath.pi / 180
+local lonradval = lonvar * symmath.pi / 180
+	
 local charts = {
 	(function()
 		local c = {}
@@ -36,9 +47,9 @@ local charts = {
 			return eccentricitySquared * sinTheta * cosTheta * equatorialRadius / (denom * denom * denom)
 		end
 
-		-- |d(x,y,z)/d(h,theta,phi)| for h=0
+		-- |d(x,y,z)/d(h,θ,φ)| for h=0
 		function c:dx_dsphere_det_h_eq_0(lat) 
-			local theta = math.rad(lat)		-- spherical inclination angle (not azumuthal theta)
+			local theta = math.rad(lat)		-- spherical inclination angle (not azumuthal θ)
 			local sinTheta = math.sin(theta)
 			local cosTheta = math.cos(theta)
 			
@@ -59,8 +70,8 @@ local charts = {
 		-- height >= 0 in meters
 		-- returns: x,y,z in meters
 		function c:chart(lat, lon, height)
-			local phi = math.rad(lon)		-- spherical phi
-			local theta = math.rad(lat)		-- spherical inclination angle (not azumuthal theta)
+			local phi = math.rad(lon)		-- spherical φ
+			local theta = math.rad(lat)		-- spherical inclination angle (not azumuthal θ)
 			local cosTheta = math.cos(theta)
 			local sinTheta = math.sin(theta)
 			
@@ -110,50 +121,86 @@ local charts = {
 	end)(),
 	
 	(function()
+		local rval = heightvar + 1
+		-- results
+		local xval = rval * symmath.cos(lonradval)
+		local yval = rval * symmath.sin(lonradval)
+		local zval = rval * latradval
+
+		local f = symmath.export.Lua:toFunc{
+			input = {
+				-- args
+				latvar, lonvar, heightvar,
+				-- gui vars
+			},
+			output = {xval, yval, zval},
+		}
+
 		local c = {}
 		c.name = 'cylinder'
 		function c:chart(lat, lon, height)
-			local r = height + 1
-			local latrad = math.rad(lat)
-			local lonrad = math.rad(lon)
-			return 
-				r * math.cos(lonrad),
-				r * math.sin(lonrad),
-				r * latrad
+			return f(lat, lon, height)
 		end
 		-- TODO c:chartInv
 		return c
 	end)(),
 
 	(function()
+		-- gui vars
+		local R = 2 / math.pi
+		local lambda0 = 0
+		local phi0 = 0
+		local phi1 = 0
+		-- symmath vars equivalent
+		local Rvar = symmath.var'R'
+		local lambda0var = symmath.var'lambda0'
+		local phi0var = symmath.var'phi0'
+		local phi1var = symmath.var'phi1'
+
+		-- results
+		local xval = Rvar * (lonradval - lambda0var) * symmath.cos(phi1var)
+		local yval = Rvar * (latradval - phi0var)
+		local zval = heightvar
+
+		local f = symmath.export.Lua:toFunc{
+			input = {
+				-- args
+				latvar, lonvar, heightvar,
+				-- gui vars
+				Rvar, lambda0var, phi0var, phi1var,
+			},
+			output = {xval, yval, zval},
+		}
+
 		local c = {}
 		c.name = 'equirectangular'
 		function c:chart(lat, lon, height)
-			local lambda = math.rad(lon)
-			local phi = math.rad(lat)
-			local R = 2/math.pi
-			local lambda0 = 0
-			local phi0 = 0
-			local phi1 = 0
-			return
-				R * (lambda - lambda0) * math.cos(phi1),
-				R * (phi - phi0),
-				height
+			return f(lat, lon, height, R, lambda0, phi0, phi1)
 		end
 		return c
 	end)(),
 
 	(function()
+		local azimuthalval = symmath.pi / 2 - latradval
+		
+		-- results
+		local xval = -symmath.sin(lonradval + symmath.pi) * azimuthalval
+		local yval = symmath.cos(lonradval + symmath.pi) * azimuthalval
+		local zval = heightvar
+	
+		local f = symmath.export.Lua:toFunc{
+			input = {
+				-- args
+				latvar, lonvar, heightvar,
+				-- gui vars
+			},
+			output = {xval, yval, zval},
+		}
+
 		local c = {}
 		c.name = 'azimuthalEquidistant'
 		function c:chart(lat, lon, height)
-			local lonrad = math.rad(lon)
-			local latrad = math.rad(lat)
-			local azimuthal = .5*math.pi - latrad
-			return
-				-math.sin(lonrad + math.pi) * azimuthal,
-				math.cos(lonrad + math.pi) * azimuthal,
-				height
+			return f(lat, lon, height)
 		end
 		return c
 	end)(),

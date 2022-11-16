@@ -81,7 +81,7 @@ print(i,j)
 			local dtheta = math.asin(math.clamp(sindtheta,-1,1))
 			theta = theta + dtheta
 		end
-		-- if theta is approx 0 then we're outside the poly
+		-- if θ is approx 0 then we're outside the poly
 		-- if it's some integer of 2 pi then we're inside the poly
 		totaltheta = totaltheta + theta
 	end
@@ -125,7 +125,8 @@ for j=0,bathImg.height-1,step do
 	--local dA = math.abs(wgs84:dx_dsphere_det_h_eq_0(lat)) * (2 * math.pi) / bathImg.width * math.pi / bathImg.height
 	local dtheta = (math.pi * step) / bathImg.height
 	local dphi = (2 * math.pi * step) / bathImg.width
-	local sintheta = math.sin((j+.5) / bathImg.height * math.pi)
+	local theta = (j+.5) / bathImg.height * math.pi
+	local sintheta = math.sin(theta)
 	local dA = sintheta * dphi * dtheta 
 	--assert(math.isfinite(dA))
 	for i=0,bathImg.width-1,step do
@@ -182,8 +183,8 @@ for j=0,bathImg.height-1,step do
 	if thisTime ~= lastTime then
 		lastTime = thisTime
 		print((100*e/numpixels)..'% complete')
-		print('com', com)
-		print('landArea', landArea)
+		--print('com', com)
+		--print('landArea', landArea)
 	end
 end
 print('reconstruction lon error', err_lon)
@@ -336,9 +337,9 @@ gamma = 1
 
 -- TODO change this to (lat, lon, height)
 -- bleh conventions:
---  physicist spherical: azimuthal = theta, lon = phi
---  mathematician spherical: azimuthal = phi, lon = theta
---  geographer: latitude = phi, lon = lambda
+--  physicist spherical: azimuthal = θ, longitude = φ
+--  mathematician spherical: azimuthal = φ, longitude = θ
+--  geographer: latitude = φ, longitude = λ
 -- rather than pick one im just gonna say 'azimuthal, latitude, longitude'
 -- oh and unitLonFrac is gonna be from 0=america to 1=east asia, so unitLonFrac==.5 means lon==0
 local function vertex(lat, lon, height)
