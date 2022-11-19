@@ -1,6 +1,7 @@
 #!/usr/bin/env luajit
 require 'ext'
 local matrix = require 'matrix'
+local vec3d = require 'vec-ffi.vec3d'
 
 local charts = require 'geographic-charts'
 local wgs84 = charts.WGS84
@@ -122,12 +123,27 @@ local step = 8
 local max_err_lat = 0
 for j=0,bathImg.height-1,step do
 	local lat = (.5 - (j+.5)/bathImg.height) * 180
-	--local dA = math.abs(wgs84:dx_dsphere_det_h_eq_0(lat)) * (2 * math.pi) / bathImg.width * math.pi / bathImg.height
 	local dtheta = (math.pi * step) / bathImg.height
 	local dphi = (2 * math.pi * step) / bathImg.width
+	
+	--[[ spherical area element (using physicist spherical coordinates)
+	U^μ = [r sinθ cosφ, r sinθ sinφ, r cosθ]
+	∂U^μ/∂r = [sinθ cosφ, sinθ sinφ, cosθ]				|∂U^μ/∂r| = 1
+	∂U^μ/∂θ = [r cosθ cosφ, r cosθ sinφ, -r sinθ]		|∂U^μ/∂θ| = r
+	∂U^μ/∂φ = [-r sinθ sinφ, r sinθ cosφ, 0]			|∂U^μ/∂φ| = r sinθ
+	s.t. det|∂U^μ/dX^ν| = Π_ν |∂U^μ/dX^ν| = r^2 sinθ
+	--]]
+	--[[
 	local theta = (j+.5) / bathImg.height * math.pi
 	local sintheta = math.sin(theta)
-	local dA = sintheta * dphi * dtheta 
+	local dU_dtheta = 1
+	local dU_dphi = sintheta
+	local dA = dU_dtheta * dU_dphi * dtheta * dphi
+	--]]
+	-- [[ same but for the WGS84 model
+	local dA = math.abs(wgs84:dx_dsphere_det_h_eq_0(lat)) * dtheta * dphi 
+	--]]
+
 	--assert(math.isfinite(dA))
 	for i=0,bathImg.width-1,step do
 		e = i + bathImg.width * j
@@ -342,7 +358,7 @@ gamma = 1
 --  geographer: latitude = φ, longitude = λ
 -- rather than pick one im just gonna say 'azimuthal, latitude, longitude'
 -- oh and unitLonFrac is gonna be from 0=america to 1=east asia, so unitLonFrac==.5 means lon==0
-local function vertex(lat, lon, height)
+local function vertexpos(lat, lon, height)
 	local latrad = math.rad(lat)
 	local azimuthal = .5*math.pi - latrad
 	local aziFrac = azimuthal / math.pi
@@ -376,7 +392,34 @@ local function vertex(lat, lon, height)
 	local x = spheroidCoeff * spheroidx + cylCoeff * cylx + equirectCoeff * equirectx + aziequiCoeff * aziequix + mollweideCoeff * mollweidex
 	local y = spheroidCoeff * spheroidy + cylCoeff * cyly + equirectCoeff * equirecty + aziequiCoeff * aziequiy + mollweideCoeff * mollweidey
 	local z = spheroidCoeff * spheroidz + cylCoeff * cylz + equirectCoeff * equirectz + aziequiCoeff * aziequiz + mollweideCoeff * mollweidez
-	gl.glVertex3d(x,y,z)
+	return x,y,z
+end
+
+local function vertex(lat, lon, height)
+	gl.glVertex3d(vertexpos(lat, lon, height))
+end
+
+local function getbasis(lat, lon, height)
+	local spheroidu, spheroidv, spheroidw = wgs84:basis(lat, lon, height)
+	local cylu, cylv, cylw = charts.cylinder:basis(lat, lon, height)
+	for _,basis in ipairs{
+		spheroidu, spheroidv, spheroidw,
+		cylu, cylv, cylw
+	} do
+		-- rotate back so y is up
+		basis.y, basis.z = basis.z, -basis.y
+		-- now rotate so prime meridian is along -z instead of +x
+		basis.x, basis.z = -basis.z, basis.x
+	end
+
+	local equirectu, equirectv, equirectw = charts.Equirectangular:basis(lat, lon, height)
+	local aziequiu, aziequiv, aziequiw = charts['Azimuthal equidistant']:basis(lat, lon, height)
+	local mollweideu, mollweidev, mollweidew = charts.Mollweide:basis(lat, lon, height)
+
+	local u = spheroidu * spheroidCoeff + cylu * cylCoeff + equirectu * equirectCoeff + aziequiu * aziequiCoeff + mollweideu * mollweideCoeff
+	local v = spheroidv * spheroidCoeff + cylv * cylCoeff + equirectv * equirectCoeff + aziequiv * aziequiCoeff + mollweidev * mollweideCoeff
+	local w = spheroidw * spheroidCoeff + cylw * cylCoeff + equirectw * equirectCoeff + aziequiw * aziequiCoeff + mollweidew * mollweideCoeff
+	return u,v,w
 end
 
 function App:update()
@@ -430,28 +473,55 @@ function App:update()
 			end
 		end
 
-		local function drawCOMOutlinedLine(com, mask)
+		local function drawMarker(com, rgb)
+			local lat, lon, height = com[1], com[2], 0
+			local r = bit.band(rgb, 0xff)/0xff
+			local g = bit.band(bit.rshift(rgb, 8), 0xff)/0xff
+			local b = bit.band(bit.rshift(rgb, 16), 0xff)/0xff
+			
 			gl.glLineWidth(3)
 			gl.glDepthMask(gl.GL_FALSE)
 			gl.glColor3f(0,0,0)
-			gl.glBegin(gl.GL_LINES)
+			gl.glBegin(gl.GL_LINE_STRIP)
 			drawCOMLine(com)
 			gl.glEnd()
 			gl.glDepthMask(gl.GL_TRUE)
 
 			gl.glLineWidth(1)
-			gl.glBegin(gl.GL_LINES)
-			gl.glColor3f(
-				bit.band(mask, 0xff)/0xff, 
-				bit.band(bit.rshift(mask, 8), 0xff)/0xff, 
-				bit.band(bit.rshift(mask, 16), 0xff)/0xff) 
+			gl.glBegin(gl.GL_LINE_STRIP)
+			gl.glColor3f(r,g,b)
 			drawCOMLine(com)
 			gl.glEnd()
+		
+			local pt = vec3d(vertexpos(lat, lon, height))
+			local du, dv, dw = getbasis(lat, lon, height)
+			
+			for j=0,1 do	-- radius
+				local rad
+				if j == 0 then
+					rad = .015
+					gl.glColor3f(0,0,0)
+					gl.glDepthMask(gl.GL_FALSE)
+				else
+					rad = .01
+					gl.glColor3f(r,g,b)
+				end
+				gl.glBegin(gl.GL_POLYGON)
+				local polydivs = 20
+				for i=1,polydivs do
+					local th = i/polydivs*2*math.pi
+					local c = rad * math.cos(th)
+					local s = rad * math.sin(th)
+					gl.glVertex3d((pt + du * c + dv * s - dw * .001):unpack())
+				end
+				gl.glEnd()
+				gl.glDepthMask(gl.GL_TRUE)
+			end
 		end
 
-		drawCOMOutlinedLine(comLatLon, 0xff)
+		drawMarker(comLatLon, 0xff)
 		for mask,com in pairs(comLatLonHeightForMask) do
-			drawCOMOutlinedLine(com, mask)
+			drawMarker(com, mask)
 		end
 	end
 

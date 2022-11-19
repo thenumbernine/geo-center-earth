@@ -15,7 +15,7 @@ so TODO change the calc_* stuff from r_θφ to h_φλ? idk ...
 --]]
 		
 -- using geographic labels: lat = φ, lon = λ
-local vec3f = require 'vec-ffi.vec3f'
+local vec3d = require 'vec-ffi.vec3d'
 local symmath = require 'symmath'
 -- input 
 local latvar = symmath.var'lat'
@@ -65,7 +65,7 @@ local charts = {
 			
 			local h = 0
 			local N = self:calc_N(sinTheta, self.a, self.eccentricitySquared)
-			local dN_dTheta = calc_dN_dTheta(sinTheta, cosTheta, self.a, eccentricitySquared)
+			local dN_dTheta = self:calc_dN_dTheta(sinTheta, cosTheta, self.a, self.eccentricitySquared)
 			local cosTheta2 = cosTheta * cosTheta
 			return -N * (
 				N * cosTheta 
@@ -188,9 +188,9 @@ local charts = {
 			local dheight_z = (dheight_r2D * sinPhiSph + r2D * dheight_sinPhiSph)
 
 			return
-				vec3f(dphi_x, dphi_y, dphi_z),
-				vec3f(dlambda_x, dlambda_y, 0),
-				vec3f(-dheight_x, -dheight_y, -dheight_z)	
+				vec3d(dphi_x, dphi_y, dphi_z),
+				vec3d(dlambda_x, dlambda_y, 0),
+				vec3d(-dheight_x, -dheight_y, -dheight_z)	
 		end
 		
 		return c
@@ -216,6 +216,15 @@ local charts = {
 		c.name = 'cylinder'
 		function c:chart(lat, lon, height)
 			return f(lat, lon, height)
+		end
+		function c:basis(lat, lon, height)
+			local lonradval = math.rad(lon)
+			local c = math.cos(lonradval)
+			local s = math.sin(lonradval)
+			return 
+				vec3d(0,0,1),
+				vec3d(-s, c, 0),
+				vec3d(c, s, 0)
 		end
 		-- TODO c:chartInv
 		return c
@@ -266,9 +275,9 @@ local charts = {
 		function c:basis(lat, lon, height)
 			-- Bx is north, By is east, Bz is down ... smh
 			return
-				vec3f(0, 1, 0),
-				vec3f(1, 0, 0),
-				vec3f(0, 0, -1)
+				vec3d(0, 1, 0),
+				vec3d(1, 0, 0),
+				vec3d(0, 0, -1)
 		end
 
 		return c
@@ -302,9 +311,9 @@ local charts = {
 			local cosLambda = math.cos(math.rad(lon))
 			local sinLambda = math.sin(math.rad(lon))
 			return
-				vec3f(-cosLambda, -sinLambda, 0),	-- d/dphi
-				vec3f(-sinLambda, cosLambda, 0),	-- d/dlambda
-				vec3f(0, 0, -1)						-- d/dheight
+				vec3d(-cosLambda, -sinLambda, 0),	-- d/dphi
+				vec3d(-sinLambda, cosLambda, 0),	-- d/dlambda
+				vec3d(0, 0, -1)						-- d/dheight
 		end
 
 		return c
@@ -349,9 +358,9 @@ local charts = {
 		
 		function c:basis(lat, lon, height)
 			return
-				vec3f(0, 1, 0),
-				vec3f(1, 0, 0),
-				vec3f(0, 0, -1)
+				vec3d(0, 1, 0),
+				vec3d(1, 0, 0),
+				vec3d(0, 0, -1)
 		end
 		
 		return c
