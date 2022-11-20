@@ -222,12 +222,12 @@ local comLatLon = matrix{wgs84:chartInv((comUnit * wgs84.a):unpack())}
 print('com lat lon =', comLatLon) 
 --]=]
 
-for _,mask in ipairs(table.keys(comForMask)) do
+local masks = table.keys(comForMask):sort()
+for _,mask in ipairs(masks) do
 	comForMask[mask] = comForMask[mask] / areaForMask[mask]
 	comLatLonHeightForMask[mask] = matrix{wgs84:chartInv((comForMask[mask] * wgs84.a):unpack())}
 	print('mask', ('%x'):format(mask), 'com', comForMask[mask], 'com lat lon', comLatLonHeightForMask[mask])
 end
-
 --[[
 comparing this to the guy who said Giza was at the center of mass of all land on earth:
 full earth 		com lat lon =	[43.742450656403, 28.632616395901]		<- next to Black Sea.  Alleged (by ... cite) COM of all land area is supposed to be at Giza, Egypt
@@ -240,10 +240,17 @@ mask	7a9afb	com lat lon	[6.3722142780304, 18.526880794863]			<- Africa, C.A.R ..
 mask	82b4fc	com lat lon	[-24.991315573585, 134.96457257506]			<- Australia, near Alice Springs ... vs Mount Olga, Australia at -25.3002455,130.7330146
 mask	aae6fe	com lat lon	[-6.201910350677, 147.3285295677]			<- Pacific Plate, on P.N.G. 
 mask	be9d8a	com lat lon	[-85.850024779859, 80.117014944601]			<- Antarctica
-
-
 --]]
 
+local angleDifferences = matrix{#masks, #masks}:lambda(function(i,j)
+	local dot = comForMask[masks[i]]:unit() *
+				comForMask[masks[j]]:unit()
+	return math.deg(math.acos(math.clamp(dot, -1, 1)))
+end)
+print'masks:'
+print(matrix(masks))
+print('angle differences:')
+print(angleDifferences) 
 
 print'resizing images...'
 local bathImgDownsized = bathImg:resize(2048,1024):rgb()

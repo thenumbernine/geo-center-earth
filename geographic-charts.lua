@@ -195,6 +195,49 @@ local charts = {
 		
 		return c
 	end)(),
+
+	(function()
+		local c = {}
+		c.name = 'sphere'
+		function c:chart(lat, lon, height)
+			local theta = math.rad(90 - lat)
+			local phi = math.rad(lon)
+			local r = 1 + height
+			return 	r * math.sin(theta) * math.cos(phi),
+					r * math.sin(theta) * math.sin(phi),
+					r * math.cos(theta)
+		end
+		function c:chartInv(x, y, z)
+			local r = math.sqrt(x*x + y*y + z*z)
+			local phi = math.atan2(y, x)
+			local r2 = math.sqrt(x*x + y*y);
+			local theta = math.atan(r2 / z)
+			local height = r - 1
+			return
+				math.deg(theta),
+				(math.deg(phi) + 180) % 360 - 180,
+				height
+		end
+		function c:basis(lat, lon, height)
+			local theta = math.rad(90 - lat)
+			local phi = math.rad(lon)
+			local r = 1 + height
+			return vec3d(
+				math.sin(theta) * math.cos(phi),
+				math.sin(theta) * math.sin(phi),
+				math.cos(theta)
+			), vec3d(
+				math.cos(theta) * math.cos(phi),
+				math.cos(theta) * math.sin(phi),
+				-math.sin(theta)
+			), vec3d(
+				-math.sin(phi),
+				math.cos(phi),
+				0
+			)
+		end
+		return c
+	end)(),
 	
 	(function()
 		local rval = heightvar + 1
