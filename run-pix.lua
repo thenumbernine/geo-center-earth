@@ -10,6 +10,7 @@ local wgs84 = charts.WGS84
 local Image = require 'image'
 --local bathImg = Image'visibleearth/gebco_08_rev_bath_21600x10800.png'
 local bathImg = Image'gebco_08_rev_bath_3600x1800_color.jpg'
+--local bathImg = Image'Global_sea_levels_during_the_last_Ice_Age_4320x2160-bath.png'
 assert(bathImg)
 --assert(bathImg.channels == 1)
 print('width', bathImg.width, 'height', bathImg.height)
@@ -358,7 +359,6 @@ alpha1 = .5
 alpha2 = .5
 gamma = 1
 
--- TODO change this to (lat, lon, height)
 -- bleh conventions:
 --  physicist spherical: azimuthal = θ, longitude = φ
 --  mathematician spherical: azimuthal = φ, longitude = θ
