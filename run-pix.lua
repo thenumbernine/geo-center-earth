@@ -6,10 +6,17 @@ local vec3d = require 'vec-ffi.vec3d'
 local charts = require 'geographic-charts'
 local wgs84 = charts.WGS84
 
+-- disable this to calculate the COM of the entire plate, not just above-water
+-- ofc the COM of the whole earth will be the center of the earth, so that wont provide any useful information.
+local continentsOnly = not cmdline.allmass
+
 -- [[
 local Image = require 'image'
+-- (this is too big)
 --local bathImg = Image'visibleearth/gebco_08_rev_bath_21600x10800.png'
+-- use our current data
 local bathImg = Image'gebco_08_rev_bath_3600x1800_color.jpg'
+-- use the pleistoscene bathymetric data (pre-Younger-Dryas-flood)
 --local bathImg = Image'Global_sea_levels_during_the_last_Ice_Age_4320x2160-bath.png'
 assert(bathImg)
 --assert(bathImg.channels == 1)
@@ -94,8 +101,6 @@ end)
 local comForMask = {}
 local comLatLonHeightForMask = {}
 local areaForMask = {}
-
-local continentsOnly = true
 
 local com = matrix{0,0,0}
 local mass = 0
