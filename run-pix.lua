@@ -382,9 +382,6 @@ local function vertexpos(lat, lon, height)
 	gl.glTexCoord2d(unitLonFrac, aziFrac)
 
 	local spheroidx, spheroidy, spheroidz = wgs84:chart(lat, lon, height)
-	spheroidx = spheroidx / wgs84.a
-	spheroidy = spheroidy / wgs84.a
-	spheroidz = spheroidz / wgs84.a
 	-- rotate back so y is up
 	spheroidy, spheroidz = spheroidz, -spheroidy
 	-- now rotate so prime meridian is along -z instead of +x
@@ -404,7 +401,7 @@ local function vertexpos(lat, lon, height)
 	local x = spheroidCoeff * spheroidx + cylCoeff * cylx + equirectCoeff * equirectx + aziequiCoeff * aziequix + mollweideCoeff * mollweidex
 	local y = spheroidCoeff * spheroidy + cylCoeff * cyly + equirectCoeff * equirecty + aziequiCoeff * aziequiy + mollweideCoeff * mollweidey
 	local z = spheroidCoeff * spheroidz + cylCoeff * cylz + equirectCoeff * equirectz + aziequiCoeff * aziequiz + mollweideCoeff * mollweidez
-	return x,y,z
+	return x / wgs84.a, y / wgs84.a, z / wgs84.a
 end
 
 local function vertex(lat, lon, height)
