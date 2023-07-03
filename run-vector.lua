@@ -425,7 +425,7 @@ function App:updateGUI(...)
 	end
 end
 
-App():run()
-
 print('lat', latmin, latmax)
 print('lon', lonmin, lonmax)
+
+return App():run()
