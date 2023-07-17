@@ -1,5 +1,7 @@
 #!/usr/bin/env luajit
-require 'ext'
+local table = require 'ext.table'
+local tolua = require 'ext.tolua'
+local file = require 'ext.file'
 local json = require 'dkjson'
 local gl = require 'gl'
 local glcall = require 'gl.call'
