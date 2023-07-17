@@ -1,5 +1,8 @@
 #!/usr/bin/env luajit
-require 'ext'
+local table = require 'ext.table'
+local range = require 'ext.range'
+local math = require 'ext.math'
+local cmdline = require 'ext.cmdline'(...)
 local matrix = require 'matrix'
 local vec3d = require 'vec-ffi.vec3d'
 
