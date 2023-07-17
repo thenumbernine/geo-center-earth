@@ -40,7 +40,7 @@ bathImg = bathImg:resize(continentImg.width, continentImg.height)
 local json = require 'dkjson'
 local polys = table()
 local layers = {
-	{name='plates', data=assert(json.decode(file'tectonicplates/GeoJSON/PB2002_plates.json':read()))},
+	{name='plates', data=assert(json.decode(path'tectonicplates/GeoJSON/PB2002_plates.json':read()))},
 }
 for _,layer in ipairs(layers) do
 	for _,feature in ipairs(layer.data.features) do
