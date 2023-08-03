@@ -350,7 +350,7 @@ void main() {
 			continentTex = 1,
 			colorTex = 2,
 		},
-	}
+	}:useNone()
 end
 
 -- globals for gui access
