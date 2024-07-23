@@ -6,7 +6,7 @@ local cmdline = require 'ext.cmdline'(...)
 local matrix = require 'matrix'
 local vec3d = require 'vec-ffi.vec3d'
 
-local charts = require 'geographic-charts'
+local charts = require 'geographic-charts.buildall'
 local wgs84 = charts.WGS84
 
 -- disable this to calculate the COM of the entire plate, not just above-water

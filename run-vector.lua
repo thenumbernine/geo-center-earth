@@ -29,7 +29,7 @@ end
 local layers = {
 	--{name='boundaries', data=boundaries},
 	--{name='orogens', data=orogens},
-	{name='plates', data=assert(json.decode(path'tectonicplates/GeoJSON/PB2002_plates.json':read()))},
+	{name='plates', data=assert(json.decode(assert(path'tectonicplates/GeoJSON/PB2002_plates.json':read())))},
 	--{name='steps', data=steps},
 	--{name='coastline', data=assert(json.decode(path'naturalearthdata/ne_10m_coastline.geojson':read()))},
 	--{name='land', data=assert(json.decode(path'naturalearthdata/ne_10m_land.geojson':read()))},
