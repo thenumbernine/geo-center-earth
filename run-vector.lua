@@ -15,6 +15,7 @@ local matrix = require 'matrix'
 --local steps = assert(json.decode(path'tectonicplates/GeoJSON/PB2002_steps.json':read()))
 
 local App = require 'imguiapp.withorbit'()
+App.viewUseGLMatrixMode = true
 App.title = 'Geo Center'
 
 function App:initGL(...)
