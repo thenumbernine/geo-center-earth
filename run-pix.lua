@@ -292,7 +292,7 @@ local gl = require 'gl'
 local ig = require 'imgui'
 local GLTex2D = require 'gl.tex2d'
 local GLProgram = require 'gl.program'
-local App = require 'imguiapp.withorbit'()
+local App = require 'imgui.appwithorbit'()
 App.viewUseGLMatrixMode = true
 App.title = 'Geo Center'
 
